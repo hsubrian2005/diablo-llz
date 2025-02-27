@@ -31,10 +31,12 @@ const BROWN_GOLD = [184, 134, 11];
 const LIGHT_GRAY = [200, 200, 200, 128];
 const DARK_GRAY = [100, 100, 100, 128];
 
-let spellbox = [];
-let respecbox = {};
-let quitbox = {};
-let potbox = [];
+let spellbox = []; // Middle textbox for spell selection
+let respecbox = {}; // Respec button
+let quitbox = {}; // Quit and change class button
+let potbox = []; // HP and MP potion textbox
+let attrbox = {}; // Left attributes textbox
+let detailbox = {}; // Right spell details textbox
 
 function preload() {
   try {
@@ -63,6 +65,8 @@ function setup() {
     { x: 0, y: 0, w: 300, h: 40, action: "hp", color: RED },
     { x: 0, y: 0, w: 300, h: 40, action: "mp", color: BLUE }
   ];
+  attrbox = { x: 0, y: 0, w: 0, h: 0 };
+  detailbox = { x: 0, y: 0, w: 0, h: 0 };
 }
 
 class Character {
@@ -92,7 +96,7 @@ class Character {
     this.baseAttackSpeed = baseAttackSpeed * 3;
     this.baseCastSpeed = baseCastSpeed;
     this.baseMpRegen = baseMpRegen;
-    this.hpRegen = 0.5;
+    this.hpRegen = 0.5 + this.strength * 0.5;
     this.vanishTimer = 0;
     this.warcryTimer = 0;
     this.warcryBoost = 0;
@@ -103,6 +107,8 @@ class Character {
     this.meleeRange = 50;
     this.rotation = 0;
     this.updateStats();
+    this.hp = this.maxHp;
+    this.mp = this.maxMp;
   }
 
   updateStats() {
@@ -114,23 +120,19 @@ class Character {
       this.hp = min(newMaxHp, this.hp);
     }
     this.maxHp = newMaxHp;
-    this.mp = Number.isFinite(this.baseMp + this.intelligence * 5) ? this.baseMp + this.intelligence * 5 : this.baseMp;
-    this.maxMp = this.mp;
-    this.baseAttackPower = Number.isFinite(this.baseAttack + 
+    this.mp = min(this.maxMp || this.baseMp + this.intelligence * 5, this.mp || this.baseMp + this.intelligence * 5);
+    this.maxMp = this.baseMp + this.intelligence * 5;
+    this.baseAttackPower = this.baseAttack + 
       (this instanceof BrianTheBarbarian ? this.strength : 
        this instanceof RichardTheRogue ? this.agility : 
-       this.intelligence) * (1 + this.warcryBoost)) ? 
-      (this.baseAttack + 
-      (this instanceof BrianTheBarbarian ? this.strength : 
-       this instanceof RichardTheRogue ? this.agility : 
-       this.intelligence)) * (1 + this.warcryBoost) : this.baseAttack;
-    this.moveSpeed = Number.isFinite(this.baseMoveSpeed + this.agility * 0.1) ? this.baseMoveSpeed + this.agility * 0.1 : this.baseMoveSpeed;
+       this.intelligence) * (1 + this.warcryBoost);
+    this.moveSpeed = this.baseMoveSpeed + this.agility * 0.1;
     this.moveSpeed *= (this.vanishTimer > 0 ? 1.5 : 1);
-    this.attackSpeed = Number.isFinite(this.baseAttackSpeed + this.agility * 0.02) ? this.baseAttackSpeed + this.agility * 0.02 : this.baseAttackSpeed;
+    this.attackSpeed = this.baseAttackSpeed + this.agility * 0.02;
     this.attackSpeed *= (this.vanishTimer > 0 ? 2 : 1);
-    this.castSpeed = Number.isFinite(this.baseCastSpeed + this.agility * 0.02) ? this.baseCastSpeed + this.agility * 0.02 : this.baseCastSpeed;
-    this.mpRegen = Number.isFinite(this.baseMpRegen + this.intelligence) ? this.baseMpRegen + this.intelligence : this.baseMpRegen;
-    this.hpRegen = Number.isFinite(this.hpRegen + this.strength * 0.1) ? this.hpRegen + this.strength * 0.1 : this.hpRegen;
+    this.castSpeed = this.baseCastSpeed + this.agility * 0.02;
+    this.mpRegen = this.baseMpRegen + this.intelligence;
+    this.hpRegen = 0.5 + this.strength * 0.5;
   }
 
   move(dx, dy, entities) {
@@ -282,12 +284,12 @@ class BrianTheBarbarian extends Character {
         centerX = this.x;
         centerY = this.y;
       }
-      let damage = 20 + level * 5 + this.strength * 1;
+      let damage = 15 + level * 5 + this.strength; // Updated Cleave damage
       let affected = 0;
       for (let target of targets) {
         if (Math.hypot(target.x - centerX, target.y - centerY) < 50 && target.isAlive) {
           target.takeDamage(damage);
-          if (this.skillLevels["skill4"] > 0 && random() < 0.15) {
+          if (this.skillLevels["skill4"] > 0 && random() < (0.10 + this.skillLevels["skill4"] * 0.05)) {
             tornadoes.push(new Tornado(target.x, target.y, this.skillLevels["skill4"], this.strength));
           }
           affected++;
@@ -310,7 +312,7 @@ class BrianTheBarbarian extends Character {
       let dx = mousePos[0] - this.x;
       let dy = mousePos[1] - this.y;
       let dist = Math.hypot(dx, dy);
-      let damage = 30 + this.strength * 1; // Damage per second
+      let damage = 35 + level * 5 + this.strength; // Updated Whirlwind damage
       if (dist > 0) {
         dx /= dist;
         dy /= dist;
@@ -345,9 +347,9 @@ class RichardTheRogue extends Character {
     let manaCost = 20 + level * 2;
     if (this.mp >= manaCost) {
       this.mp -= manaCost;
-      let arrowCount = 3 + Math.floor(level / 2);
-      let damagePerArrow = 20 + level * 2 + this.agility * (1 + level * 0.05);
-      this.spellAnimation = { type: "guidedArrows", count: arrowCount, damage: damagePerArrow, x: this.x, y: this.y, targets: targets, duration: 60 };
+      let arrowCount = 2 + level; // Updated arrow count
+      let damagePerArrow = 5 + level * 5 + this.agility; // Updated damage
+      this.spellAnimation = { type: "guidedArrows", count: arrowCount, damage: damagePerArrow, x: this.x, y: this.y, targets: targets.concat(this.skeletons || []), duration: 60 };
       spellMessage = { text: "Multi-Guided Arrows casted", timer: 180 };
       console.log(`${this.name} uses Multi-Guided Arrows: ${arrowCount} arrows`);
       return damagePerArrow * arrowCount;
@@ -361,7 +363,7 @@ class RichardTheRogue extends Character {
     let manaCost = 15 + level * 2;
     if (this.mp >= manaCost) {
       this.mp -= manaCost;
-      let damage = 50 + level * 5 + this.agility * (2 + level * 0.1);
+      let damage = 20 + level * 10 + this.agility * 2; // Updated Shadow Step damage
       let closest = targets.reduce((min, t) => {
         let d = Math.hypot(t.x - mousePos[0], t.y - mousePos[1]);
         return (t.isAlive && d < min.dist) ? { target: t, dist: d } : min;
@@ -376,6 +378,12 @@ class RichardTheRogue extends Character {
           this.x = closest.x - dx * (closest.radius + this.radius + 5);
           this.y = closest.y - dy * (closest.radius + this.radius + 5);
           this.targetPos = null;
+          if (this.vanishTimer > 0 && this.spellAnimation?.type === "vanish" && 
+              Math.hypot(this.x - this.spellAnimation.x, this.y - this.spellAnimation.y) > this.spellAnimation.radius) {
+            this.vanishTimer = 0;
+            this.color = this.originalColor.slice();
+            this.updateStats();
+          }
         }
         closest.takeDamage(damage);
         this.spellAnimation = { type: "circle", color: GREEN.slice(), radius: 30, x: closest.x, y: closest.y, duration: 15 };
@@ -393,11 +401,14 @@ class RichardTheRogue extends Character {
     let manaCost = 10 + level * 1.5;
     if (this.mp >= manaCost) {
       this.mp -= manaCost;
-      let damage = 40 + level * 5 + this.agility * (1 + level * 0.1);
-      this.spellAnimation = { type: "lightningSentry", x: mousePos[0], y: mousePos[1], damage: damage, targets: targets, duration: 6 * 60, shots: 6, shotTimer: 60 };
-      spellMessage = { text: "Lightning Sentry casted", timer: 180 };
-      console.log(`${this.name} summons Lightning Sentry`);
-      return damage;
+      let damage = 10 + level * 10 + this.agility; // Updated Lightning Sentry damage
+      sentries = sentries.filter(s => s.active);
+      if (sentries.length < 5) {
+        this.spellAnimation = { type: "lightningSentry", x: mousePos[0], y: mousePos[1], damage: damage, targets: targets.concat(this.skeletons || []), duration: 6 };
+        spellMessage = { text: "Lightning Sentry casted", timer: 180 };
+        console.log(`${this.name} summons Lightning Sentry`);
+        return damage;
+      }
     }
     return 0;
   }
@@ -426,12 +437,13 @@ function playGame() {
   let entities = enemies.concat(player.skeletons || []).concat([player]);
 
   let canMove = true;
-  if (leftHeld && attackCooldown === 0 && player.lockedEnemy && player.lockedEnemy.isAlive) {
+  let isWhirlwinding = player.spellAnimation?.type === "whirlwind" && player.targetPos;
+  if (leftHeld && attackCooldown === 0 && player.lockedEnemy && player.lockedEnemy.isAlive && !isWhirlwinding) {
     let dist = Math.hypot(player.lockedEnemy.x - player.x, player.lockedEnemy.y - player.y);
     if (dist <= player.meleeRange) {
       canMove = false;
       player.lockedEnemy.takeDamage(player.baseAttackPower);
-      if (player instanceof BrianTheBarbarian && player.skillLevels["skill4"] > 0 && random() < 0.15) {
+      if (player instanceof BrianTheBarbarian && player.skillLevels["skill4"] > 0 && random() < (0.10 + player.skillLevels["skill4"] * 0.05)) {
         tornadoes.push(new Tornado(player.lockedEnemy.x, player.lockedEnemy.y, player.skillLevels["skill4"], player.strength));
       }
       console.log(`${player.name} attacks for ${player.baseAttackPower} damage`);
@@ -441,9 +453,12 @@ function playGame() {
       player.targetPos = [player.lockedEnemy.x, player.lockedEnemy.y];
     }
   }
-  if (canMove) {
+  if (canMove && !isWhirlwinding) {
     player.moveToTarget(entities);
     if (leftHeld && !player.lockedEnemy) player.targetPos = [mouseX, mouseY];
+  } else if (isWhirlwinding) {
+    player.moveToTarget(entities);
+    leftHeld = false; // Prevent movement input during Whirlwind
   }
 
   player.mp = min(player.maxMp, player.mp + player.mpRegen / 60);
@@ -464,16 +479,19 @@ function playGame() {
     }
   }
 
+  if (player.spellAnimation?.type === "vanish") {
+    let dist = Math.hypot(player.x - player.spellAnimation.x, player.y - player.spellAnimation.y);
+    if (dist > player.spellAnimation.radius) {
+      player.vanishTimer = 0;
+      player.color = player.originalColor.slice();
+      player.updateStats();
+    } else if (dist <= player.spellAnimation.radius && player.vanishTimer === 0) {
+      player.vanishTimer = player.spellAnimation.duration;
+      player.updateStats();
+    }
+  }
   if (player.vanishTimer > 0) {
     player.vanishTimer--;
-    if (player.spellAnimation && player.spellAnimation.type === "vanish") {
-      let dist = Math.hypot(player.x - player.spellAnimation.x, player.y - player.spellAnimation.y);
-      if (dist > player.spellAnimation.radius) {
-        player.vanishTimer = 0;
-        player.color = player.originalColor.slice();
-        player.updateStats();
-      }
-    }
     if (player.vanishTimer === 0) {
       player.color = player.originalColor.slice();
       player.updateStats();
@@ -481,7 +499,7 @@ function playGame() {
   }
 
   potions = potions.filter(potion => {
-    if (Math.hypot(potion.x - player.x, potion.y - player.radius) < player.radius + potion.radius && potion.pickup(player)) return false;
+    if (Math.hypot(potion.x - player.x, potion.y - player.y) < player.radius + potion.radius && potion.pickup(player)) return false;
     if (!potion.update()) return false;
     potion.draw();
     return true;
@@ -552,7 +570,7 @@ function playGame() {
         enemy.originalColor = enemy.color.slice();
         enemy.color = BLUE.slice();
       } else if (!inAoe && enemy.activeBlizzard && enemy.blizzardTimer <= 0) {
-        enemy.chilledTimer = max(enemy.chilledTimer, 0);
+        enemy.chilledTimer = max(enemy.chilledTimer, 120);
       }
     });
   }
@@ -563,6 +581,9 @@ function playGame() {
       for (let enemy of enemies) {
         if (enemy.isAlive && Math.hypot(enemy.x - player.x, enemy.y - player.y) < player.spellAnimation.radius + enemy.radius) {
           enemy.takeDamage(player.spellAnimation.damage / 60);
+          if (player.skillLevels["skill4"] > 0 && random() < (0.10 + player.skillLevels["skill4"] * 0.05)) {
+            tornadoes.push(new Tornado(enemy.x, enemy.y, player.skillLevels["skill4"], player.strength));
+          }
         }
       }
     }
@@ -607,6 +628,7 @@ function playGame() {
     if ("fireDamage" in bolt) {
       bolt.x += bolt.dx * 10;
       bolt.y += bolt.dy * 10;
+      stroke(GREEN);
     } else {
       bolt.x += bolt.dx * (bolt.type === "chargedBolt" ? 0.83 : 7.5);
       bolt.y += bolt.dy * (bolt.type === "chargedBolt" ? 0.83 : 7.5);
@@ -622,6 +644,10 @@ function playGame() {
     for (let target of enemies) {
       if (Math.hypot(target.x - bolt.x, target.y - bolt.y) < target.radius + 5 && target.isAlive) {
         target.takeDamage(bolt.damage + (bolt.fireDamage || 0));
+        if ("fireDamage" in bolt) {
+          target.poisonTimer = 4 * 60;
+          target.poisonDps = bolt.damage / 60;
+        }
         if (bolt.penetrating) hitTargets.push(target);
         else return false;
       }
@@ -648,30 +674,32 @@ function playGame() {
   });
 
   if (player.spellAnimation?.type === "fireWall") {
-    if (fireWalls.length >= 3) fireWalls.shift();
+    if (fireWalls.length >= 3) fireWalls.shift(); // Max 3 Firewalls
     fireWalls.push(player.spellAnimation);
   }
 
   fireWalls = fireWalls.filter(fw => {
     fw.duration--;
-    enemies.forEach(enemy => {
-      let fwCenter = { x: fw.x, y: fw.y };
-      let rotatedEnemy = { x: enemy.x - fwCenter.x, y: enemy.y - fwCenter.y };
-      let cosA = Math.cos(-fw.angle), sinA = Math.sin(-fw.angle);
-      let rx = rotatedEnemy.x * cosA - rotatedEnemy.y * sinA;
-      let ry = rotatedEnemy.x * sinA + rotatedEnemy.y * cosA;
-      let fwRect = { left: -fw.width / 2, right: fw.width / 2, top: -fw.height / 2, bottom: fw.height / 2 };
-      if (rx > fwRect.left && rx < fwRect.right && ry > fwRect.top && ry < fwRect.bottom && enemy.isAlive) {
-        enemy.takeDamage(fw.damage / 60);
-      }
-    });
-    push();
-    translate(fw.x, fw.y);
-    rotate(fw.angle);
-    noStroke();
-    fill([255, 165, 0, 77]);
-    rect(-fw.width / 2, -fw.height / 2, fw.width, fw.height);
-    pop();
+    if (fw.duration > 0) {
+      enemies.forEach(enemy => {
+        let fwCenter = { x: fw.x, y: fw.y };
+        let rotatedEnemy = { x: enemy.x - fwCenter.x, y: enemy.y - fwCenter.y };
+        let cosA = Math.cos(-fw.angle), sinA = Math.sin(-fw.angle);
+        let rx = rotatedEnemy.x * cosA - rotatedEnemy.y * sinA;
+        let ry = rotatedEnemy.x * sinA + rotatedEnemy.y * cosA;
+        let fwRect = { left: -fw.width / 2, right: fw.width / 2, top: -fw.height / 2, bottom: fw.height / 2 };
+        if (rx > fwRect.left && rx < fwRect.right && ry > fwRect.top && ry < fwRect.bottom && enemy.isAlive) {
+          enemy.takeDamage(fw.damage / 60);
+        }
+      });
+      push();
+      translate(fw.x, fw.y);
+      rotate(fw.angle);
+      noStroke();
+      fill([255, 165, 0, 255]); // Fully opaque until duration ends
+      rect(-fw.width / 2, -fw.height / 2, fw.width, fw.height);
+      pop();
+    }
     return fw.duration > 0;
   });
 
@@ -692,6 +720,7 @@ function playGame() {
       arrow.x += dx * 5;
       arrow.y += dy * 5;
       arrow.duration--;
+      if (arrow.x < 0 || arrow.x > WIDTH || arrow.y < 0 || arrow.y > HEIGHT) return false;
     } else if ('takeDamage' in arrow.target && arrow.target.isAlive) {
       arrow.target.takeDamage(arrow.damage);
       if (player.vanishTimer > 0) arrow.target.fleeTarget = player;
@@ -712,7 +741,7 @@ function playGame() {
   });
 
   tornadoes = tornadoes.filter(tornado => {
-    tornado.update(entities);
+    tornado.update(enemies);
     tornado.draw();
     return tornado.duration > 0;
   });
@@ -722,7 +751,7 @@ function playGame() {
       fill(player.spellAnimation.color);
       ellipse(player.spellAnimation.x, player.spellAnimation.y, player.spellAnimation.radius * 2);
       player.spellAnimation.duration--;
-      if (player.spellAnimation.duration <= 0 && player.spellAnimation.type !== "vanish") player.spellAnimation = null;
+      if (player.spellAnimation.duration <= 0) player.spellAnimation = null;
     } else if (player.spellAnimation.type === "halfCircle") {
       noFill();
       stroke(player.spellAnimation.color);
@@ -817,10 +846,10 @@ class AndersonTheNecromancer extends Character {
     let manaCost = 20 + level * 2;
     if (this.mp >= manaCost) {
       this.mp -= manaCost;
-      let dps = 5 + level * 1 + this.intelligence * (0.2 + level * 0.02);
-      let duration = (5 + level * 0.3) * 60;
+      let dps = 8 + level * 3 + this.intelligence * 0.5;
+      let duration = 60;
       let maxRadius = 100 + level * 15;
-      this.spellAnimation = { type: "poisonNova", color: GREEN.slice(), radius: 0, maxRadius: maxRadius, x: this.x, y: this.y, dps: dps, duration: duration, targets: targets, frame: 0 };
+      this.spellAnimation = { type: "poisonNova", count: 50, damage: dps / 60, x: this.x, y: this.y, targets: targets.concat(this.skeletons || []), duration: duration, radius: maxRadius };
       spellMessage = { text: "Poison Nova casted", timer: 180 };
       console.log(`${this.name} uses Poison Nova`);
       return dps;
@@ -834,7 +863,7 @@ class AndersonTheNecromancer extends Character {
     let manaCost = 15 + level * 2;
     if (this.mp >= manaCost) {
       this.mp -= manaCost;
-      let damage = 30 + level * 5 + this.intelligence * (1.5 + level * 0.1);
+      let damage = 15 + level * 5 + this.intelligence; // Updated Bone Spear damage
       let dx = mousePos[0] - this.x;
       let dy = mousePos[1] - this.y;
       let dist = Math.hypot(dx, dy);
@@ -842,7 +871,7 @@ class AndersonTheNecromancer extends Character {
         dx /= dist;
         dy /= dist;
         let maxDist = max(WIDTH, HEIGHT);
-        this.spellAnimation = { type: "boneSpear", x: this.x, y: this.y, dx: dx, dy: dy, damage: damage, targets: targets, duration: Math.round(maxDist / 10) };
+        this.spellAnimation = { type: "boneSpear", x: this.x, y: this.y, dx: dx, dy: dy, damage: damage, targets: targets.concat(this.skeletons || []), duration: Math.round(maxDist / 10), penetrating: true };
       }
       spellMessage = { text: "Bone Spear casted", timer: 180 };
       console.log(`${this.name} uses Bone Spear for ${damage} damage`);
@@ -858,8 +887,8 @@ class AndersonTheNecromancer extends Character {
     if (this.mp >= manaCost) {
       this.mp -= manaCost;
       let maxSkeletons = level;
-      let skeletonHp = 50 + level * 10 + this.intelligence * 5;
-      let skeletonDmg = 10 + level * 2 + this.intelligence * 0.5;
+      let skeletonHp = this.intelligence * 10; // Updated Skeleton HP
+      let skeletonDmg = this.intelligence * 2; // Updated Skeleton damage
       while (this.skeletons.length >= maxSkeletons) this.skeletons.shift();
       this.skeletons.push(new Skeleton(mousePos[0], mousePos[1], skeletonHp, skeletonDmg));
       spellMessage = { text: "Raise Skeleton casted", timer: 180 };
@@ -893,9 +922,97 @@ class AndersonTheNecromancer extends Character {
   }
 }
 
+class JeffTheMage extends Character {
+  constructor(x, y, level = 1) {
+    super("Jeff", x, y, 5, 10, 18, 1, 1, 2, 70, 100, 12, 2.0, 1.0, 1.5, 1.2, level);
+    this.color = PURPLE.slice();
+    this.skillNames = ["Charged Bolt", "Nova", "Blizzard", "Fire Wall"];
+    this.originalColor = PURPLE.slice();
+    this.blizzardCooldown = 0;
+  }
+
+  skill1(targets, mousePos) {
+    let level = this.skillLevels["skill1"];
+    if (level === 0) return 0;
+    let manaCost = 20 + level * 2;
+    if (this.mp >= manaCost) {
+      this.mp -= manaCost;
+      let damage = 5 + level * 5 + this.intelligence; // Updated Charged Bolt damage
+      let dx = mousePos[0] - this.x;
+      let dy = mousePos[1] - this.y;
+      let dist = Math.hypot(dx, dy);
+      if (dist > 0) {
+        dx /= dist;
+        dy /= dist;
+      } else {
+        dx = 1;
+        dy = 0;
+      }
+      this.spellAnimation = { type: "chargedBolt", count: 4 + level * 2, damage: damage, x: this.x, y: this.y, dx: dx, dy: dy, targets: targets.concat(this.skeletons || []), duration: 60 };
+      spellMessage = { text: "Charged Bolt casted", timer: 180 };
+      console.log(`${this.name} uses Charged Bolt`);
+      return damage;
+    }
+    return 0;
+  }
+
+  skill2(targets, mousePos) {
+    let level = this.skillLevels["skill2"];
+    if (level === 0) return 0;
+    let manaCost = 15 + level * 2;
+    if (this.mp >= manaCost) {
+      this.mp -= manaCost;
+      let damage = 10 + level * 5 + this.intelligence; // Updated Nova damage
+      this.spellAnimation = { type: "nova", frame: 0, damage: damage, x: this.x, y: this.y, maxRadius: 200, targets: targets.concat(this.skeletons || []), color: WHITE };
+      spellMessage = { text: "Nova casted", timer: 180 };
+      console.log(`${this.name} uses Nova for ${damage} damage`);
+      return damage;
+    }
+    return 0;
+  }
+
+  skill3(targets, mousePos) {
+    let level = this.skillLevels["skill3"];
+    if (level === 0 || this.blizzardCooldown > 0) return 0;
+    let manaCost = 15 + level * 2;
+    if (this.mp >= manaCost) {
+      this.mp -= manaCost;
+      let dps = 30 + level * 5 + this.intelligence; // Updated Blizzard damage
+      let duration = 5 * 60;
+      let slow = 0.50 + level * 0.03; // Updated Blizzard slow
+      let blizzards = player.spellAnimation?.type === "square" ? 1 : 0;
+      if (blizzards < 2) { // Max 2 Blizzards
+        this.spellAnimation = { type: "square", color: [0, 0, 255, 128], size: 150, x: mousePos[0], y: mousePos[1], duration: duration, dps: dps / 60, slow: slow };
+        this.blizzardCooldown = 60;
+        spellMessage = { text: "Blizzard casted", timer: 180 };
+        console.log(`${this.name} uses Blizzard for ${dps} DPS (Slow ${Math.round(slow * 100)}%)`);
+        return dps;
+      }
+    }
+    return 0;
+  }
+
+  skill4(targets, mousePos) {
+    let level = this.skillLevels["skill4"];
+    if (level === 0) return 0;
+    let manaCost = 30 + level * 2;
+    if (this.mp >= manaCost) {
+      this.mp -= manaCost;
+      let damage = 30 + level * 10 + this.intelligence * 2; // Updated Fire Wall damage
+      let dx = mousePos[0] - this.x;
+      let dy = mousePos[1] - this.y;
+      let angle = Math.atan2(dy, dx) + PI / 2;
+      this.spellAnimation = { type: "fireWall", x: mousePos[0], y: mousePos[1], angle: angle, damage: damage, duration: 5 * 60, width: 300, height: 30 }; // Fixed 5s duration
+      spellMessage = { text: "Fire Wall casted", timer: 180 };
+      console.log(`${this.name} uses Fire Wall for ${damage} DPS`);
+      return damage;
+    }
+    return 0;
+  }
+}
 class Enemy extends Character {
   constructor(x, y) {
-    super("Mob1", x, y, 5, 10, 5, 1, 1, 1, 0, 20, 0, 0.75, 1.5, 0, 0.2, 1);
+    super("Mob1", x, y, 0, 10, 5, 1, 1, 1, 40, 20, 10, 0.75, 1.5, 0, 0.2, 1);
     this.color = RED.slice();
     this.attackCooldown = 0;
     this.attackDelay = 60;
@@ -957,7 +1074,7 @@ class Enemy extends Character {
     }
     let dist = Math.hypot(target.x - this.x, target.y - this.y);
     if (this.attackCooldown <= 0 && dist < this.meleeRange) {
-      let damage = this.baseAttackPower + random(5, 10);
+      let damage = 10;
       target.takeDamage(damage * (1 + this.damageAmplify));
       this.attackCooldown = this.attackDelay * (1 + this.slowEffect);
       attackAnimations.push({ x: target.x, y: target.y, duration: 6, symbol: target instanceof Character ? "#" : "/" });
@@ -970,8 +1087,9 @@ class Enemy extends Character {
 
   update() {
     if (this.poisonTimer > 0) {
-      this.takeDamage(this.poisonDps / 60 * (1 + this.damageAmplify));
+      this.takeDamage(this.poisonDps * (1 + this.damageAmplify));
       this.poisonTimer--;
+      this.color = GREEN.slice();
       if (this.poisonTimer <= 0 && this.isAlive) this.color = this.originalColor.slice();
     }
     if (this.amplifyTimer > 0) {
@@ -999,99 +1117,19 @@ class Enemy extends Character {
     push();
     translate(this.x, this.y);
     fill(this.color);
-    ellipse(0, -5, 10, 8); // Head
-    rect(-5, 0, 10, 10); // Body
-    line(-5, 5, -10, 10); // Left arm
-    line(5, 5, 10, 10); // Right arm
-    line(-3, 10, -5, 15); // Left leg
-    line(3, 10, 5, 15); // Right leg
+    ellipse(0, -5, 10, 8);
+    rect(-5, 0, 10, 10);
+    line(-5, 5, -10, 10);
+    line(5, 5, 10, 10);
+    line(-3, 10, -5, 15);
+    line(3, 10, 5, 15);
     pop();
     fill(RED);
     rect(this.x - 15, this.y - 20, (this.hp / this.maxHp) * 30, 5);
     if (this.amplifyTimer > 0) {
       fill(PURPLE);
-      textSize(12);
-      text("*", this.x - 5, this.y - 30);
+      ellipse(this.x, this.y - 25, 10);
     }
-  }
-}
-class JeffTheMage extends Character {
-  constructor(x, y, level = 1) {
-    super("Jeff", x, y, 5, 7, 20, 1, 1, 2, 70, 100, 10, 2.0, 1.0, 2.0, 1.2, level);
-    this.color = [139, 69, 19];
-    this.skillNames = ["Charged Bolt", "Nova", "Blizzard", "Fire Wall"];
-    this.blizzardCooldown = 0;
-    this.originalColor = [139, 69, 19];
-  }
-
-  skill1(targets, mousePos) {
-    let level = this.skillLevels["skill1"];
-    if (level === 0) return 0;
-    let manaCost = 20 + level * 2;
-    if (this.mp >= manaCost) {
-      this.mp -= manaCost;
-      let boltCount = 4 + level * 2;
-      let damage = 15 + level * 2 + this.intelligence * (1 + level * 0.1);
-      let dx = mousePos[0] - this.x;
-      let dy = mousePos[1] - this.y;
-      let dist = Math.hypot(dx, dy);
-      if (dist > 0) { dx /= dist; dy /= dist; }
-      this.spellAnimation = { type: "chargedBolt", x: this.x, y: this.y, dx: dx, dy: dy, count: boltCount, damage: damage, targets: targets, duration: 60 };
-      spellMessage = { text: "Charged Bolt casted", timer: 180 };
-      console.log(`${this.name} uses Charged Bolt: ${boltCount} bolts`);
-      return damage * boltCount;
-    }
-    return 0;
-  }
-
-  skill2(targets, mousePos) {
-    let level = this.skillLevels["skill2"];
-    if (level === 0) return 0;
-    let manaCost = 15 + level * 2;
-    if (this.mp >= manaCost) {
-      this.mp -= manaCost;
-      let damage = (35 + level * 5 + this.intelligence * (1.5 + level * 0.1)) * 2 / 3;
-      this.spellAnimation = { type: "nova", color: WHITE.slice(), radius: 0, maxRadius: 200, x: this.x, y: this.y, damage: damage, targets: targets, frame: 0, duration: 10 };
-      spellMessage = { text: "Nova casted", timer: 180 };
-      console.log(`${this.name} uses Nova`);
-      return damage;
-    }
-    return 0;
-  }
-
-  skill3(targets, mousePos) {
-    let level = this.skillLevels["skill3"];
-    if (level === 0 || this.blizzardCooldown > 0) return 0;
-    let manaCost = 15 + level * 2;
-    if (this.mp >= manaCost) {
-      this.mp -= manaCost;
-      let dps = 25 + level * 5 + this.intelligence * (1 + level * 0.1);
-      let duration = 4 * 60;
-      this.blizzardCooldown = 120;
-      this.spellAnimation = { type: "square", color: [0, 0, 255, 128], size: 150, x: mousePos[0], y: mousePos[1], duration: duration, dps: dps / 60, slow: 0.5 };
-      spellMessage = { text: "Blizzard casted", timer: 180 };
-      console.log(`${this.name} uses Blizzard for ${dps} DPS (Slow 50%)`);
-      return dps;
-    }
-    return 0;
-  }
-
-  skill4(targets, mousePos) {
-    let level = this.skillLevels["skill4"];
-    if (level === 0) return 0;
-    let manaCost = 30 + level * 2;
-    if (this.mp >= manaCost) {
-      this.mp -= manaCost;
-      let damage = 30 + level * 5 + this.intelligence * (1.5 + level * 0.1);
-      let dx = mousePos[0] - this.x;
-      let dy = mousePos[1] - this.y;
-      let angle = Math.atan2(dy, dx) + PI / 2;
-      this.spellAnimation = { type: "fireWall", x: mousePos[0], y: mousePos[1], angle: angle, damage: damage, duration: 5 * 60, width: 300, height: 30 };
-      spellMessage = { text: "Fire Wall casted", timer: 180 };
-      console.log(`${this.name} uses Fire Wall for ${damage} DPS`);
-      return damage;
-    }
-    return 0;
   }
 }
 
@@ -1162,11 +1200,11 @@ class Skeleton {
     push();
     translate(this.x, this.y);
     fill(this.color);
-    ellipse(0, 0, 12, 10); // Skull head
+    ellipse(0, 0, 12, 10);
     fill(BLACK);
-    ellipse(-3, -2, 3, 3); // Left eye
-    ellipse(3, -2, 3, 3); // Right eye
-    rect(-2, 2, 4, 2); // Mouth
+    ellipse(-3, -2, 3, 3);
+    ellipse(3, -2, 3, 3);
+    rect(-2, 2, 4, 2);
     pop();
     fill(RED);
     rect(this.x - 15, this.y - 15, (this.hp / this.maxHp) * 30, 5);
@@ -1256,7 +1294,7 @@ class Tornado {
     this.y = y;
     this.level = level;
     this.strength = strength;
-    this.damage = 5 + level * 5 + strength * 0.5;
+    this.damage = level === 1 ? 5 + strength * 0.5 : 10 + strength * 0.5; // Updated Devil Dust damage
     this.duration = 5 * 60;
     this.radius = 25;
     this.dx = random(-1, 1);
@@ -1275,7 +1313,7 @@ class Tornado {
     this.y = constrain(this.y, this.radius, HEIGHT - this.radius);
     this.duration--;
     entities.forEach(entity => {
-      if (entity.isAlive && Math.hypot(entity.x - this.x, entity.y - this.y) < this.radius + entity.radius) {
+      if (entity.isAlive && entity instanceof Enemy && Math.hypot(entity.x - this.x, entity.y - this.y) < this.radius + entity.radius) {
         entity.takeDamage(this.damage / 60);
       }
     });
@@ -1329,7 +1367,7 @@ function draw() {
     rect(WIDTH / 2 - 120, HEIGHT / 2 + 20, 100, 40);
     fill(BLACK);
     text("Respawn", WIDTH / 2 - 70, HEIGHT / 2 + 40);
-    fill(mouseX > WIDTH / 2 + 20 && mouseX < WIDTH / 2 + 120 && mouseY > HEIGHT / 2 + 20 && mouseY < HEIGHT / 2 + 60 ? GRAY : WHITE);
+    fill(mouseX > WIDTH / 2 + 20 && mouseX < WIDTH / 2 + 120 && mouseY > HEIGHT / 2 + 20 && mouseY < HEIGHT / 2 + 60 ? GupdatesRAY : WHITE);
     rect(WIDTH / 2 + 20, HEIGHT / 2 + 20, 100, 40);
     fill(BLACK);
     text("Restart", WIDTH / 2 + 70, HEIGHT / 2 + 40);
@@ -1337,31 +1375,34 @@ function draw() {
 
   if (player?.spellAnimation?.type === "poisonNova") {
     let anim = player.spellAnimation;
-    anim.frame++;
-    anim.radius = anim.maxRadius * (anim.frame / (anim.duration / 2));
-    fill(anim.color);
-    ellipse(anim.x, anim.y, anim.radius * 2);
-    for (let target of anim.targets) {
-      if (Math.hypot(target.x - anim.x, target.y - anim.y) < anim.radius && target.isAlive) {
-        target.poisonTimer = anim.duration;
-        target.poisonDps = anim.dps;
-        target.color = GREEN.slice();
+    anim.duration--;
+    if (anim.duration === 59) {
+      for (let i = 0; i < anim.count; i++) {
+        let angle = (TWO_PI / anim.count) * i;
+        let dx = cos(angle);
+        let dy = sin(angle);
+        bolts.push({ x: anim.x, y: anim.y, dx: dx, dy: dy, damage: anim.damage, duration: Math.round(anim.radius / 10), fireDamage: anim.damage });
       }
     }
-    if (anim.frame >= anim.duration / 2) player.spellAnimation = null;
+    if (anim.duration <= 0) player.spellAnimation = null;
   } else if (player?.spellAnimation?.type === "boneSpear") {
     let anim = player.spellAnimation;
     anim.x += anim.dx * 10;
     anim.y += anim.dy * 10;
-    stroke(WHITE);
-    strokeWeight(2);
-    line(anim.x, anim.y, anim.x - anim.dx * 20, anim.y - anim.dy * 20);
-    strokeWeight(1);
+    push();
+    translate(anim.x, anim.y);
+    rotate(atan2(anim.dy, anim.dx));
+    fill(BLACK);
+    beginShape();
+    vertex(20, 0);
+    vertex(-20, -5);
+    vertex(-40, 0);
+    vertex(-20, 5);
+    endShape(CLOSE);
+    pop();
     for (let target of anim.targets) {
-      if (Math.hypot(target.x - anim.x, target.y - anim.y) < target.radius + 5 && target.isAlive) {
+      if (Math.hypot(target.x - anim.x, target.y - anim.y) < target.radius + 5 && target.isAlive && target instanceof Enemy) {
         target.takeDamage(anim.damage);
-        player.spellAnimation = null;
-        break;
       }
     }
     anim.duration--;
@@ -1393,7 +1434,7 @@ function draw() {
     ellipse(anim.x, anim.y, anim.radius * 2);
     if (anim.frame >= 10) {
       for (let target of anim.targets) {
-        if (Math.hypot(target.x - anim.x, target.y - anim.y) < anim.maxRadius && target.isAlive) {
+        if (Math.hypot(target.x - anim.x, target.y - anim.y) < anim.maxRadius && target.isAlive && target instanceof Enemy) {
           target.takeDamage(anim.damage);
           target.stunTimer = 30;
           let pushDx = (target.x - anim.x) / max(1, Math.hypot(target.x - anim.x, target.y - anim.y));
@@ -1408,7 +1449,7 @@ function draw() {
     let anim = player.spellAnimation;
     anim.duration--;
     if (anim.duration === 59) {
-      let aliveTargets = anim.targets.filter(t => t.isAlive);
+      let aliveTargets = anim.targets.filter(t => t.isAlive && t instanceof Enemy);
       for (let i = 0; i < anim.count; i++) {
         let target = aliveTargets.length > 0 ? random(aliveTargets) : { x: anim.x + random(-100, 100), y: anim.y + random(-100, 100) };
         arrows.push({ x: anim.x, y: anim.y, target: 'isAlive' in target ? target : [target.x, target.y], damage: anim.damage, duration: 300 });
@@ -1473,7 +1514,7 @@ function drawSkillUpgradeScreen() {
   potbox[1].x = WIDTH / 2 - 50;
   potbox[1].y = HEIGHT / 2 + 180;
 
-  let attrbox = { x: 50, y: HEIGHT / 2 - 180, w: 200, h: 400 };
+  attrbox = { x: 50, y: HEIGHT / 2 - 180, w: 200, h: 400 };
   let spacing = 30;
   text(`Class: ${player.name}`, attrbox.x, attrbox.y);
   text(`Level: ${player.level}`, attrbox.x, attrbox.y + spacing);
@@ -1509,7 +1550,7 @@ function drawSkillUpgradeScreen() {
   text(`HP Regen: ${player.hpRegen.toFixed(1)}/s`, attrbox.x, attrbox.y + spacing * 14);
   text(`MP Regen: ${player.mpRegen.toFixed(1)}/s`, attrbox.x, attrbox.y + spacing * 15);
 
-  let detailbox = { x: WIDTH / 2 + 260, y: HEIGHT / 2 - 180, w: 180, h: potbox[1].y + potbox[1].h - (HEIGHT / 2 - 180) };
+  detailbox = { x: WIDTH / 2 + 260, y: HEIGHT / 2 - 180, w: 180, h: potbox[1].y + potbox[1].h - (HEIGHT / 2 - 180) };
   fill(BLACK);
   rect(detailbox.x, detailbox.y, detailbox.w, detailbox.h);
 
@@ -1553,62 +1594,146 @@ function drawSkillUpgradeScreen() {
     let statName = player instanceof BrianTheBarbarian ? "STR" : player instanceof RichardTheRogue ? "AGI" : "INT";
     let statValue = player instanceof BrianTheBarbarian ? player.strength : player instanceof RichardTheRogue ? player.agility : player.intelligence;
     let details = player instanceof BrianTheBarbarian ? {
-      "skill1": `Increase Dmg: ${player.skillLevels["skill1"] > 0 ? `+${Math.round((0.2 + player.skillLevels["skill1"] * 0.02) * 100)}%` : ""}${player.skillLevels["skill1"] < 10 ? " / " : ""}${player.skillLevels["skill1"] < 10 ? `<red>+${Math.round((0.2 + (player.skillLevels["skill1"] + 1) * 0.02) * 100)}%</red>` : ""}\nIncrease HP: ${player.skillLevels["skill1"] > 0 ? `+${Math.round((0.11 + player.skillLevels["skill1"] * 0.01) * 100)}%` : ""}${player.skillLevels["skill1"] < 10 ? " / " : ""}${player.skillLevels["skill1"] < 10 ? `<red>+${Math.round((0.11 + (player.skillLevels["skill1"] + 1) * 0.01) * 100)}%</red>` : ""}\nDuration: ${player.skillLevels["skill1"] > 0 ? `${(8 + player.skillLevels["skill1"] * 0.4).toFixed(1)}s` : ""}${player.skillLevels["skill1"] < 10 ? " / " : ""}${player.skillLevels["skill1"] < 10 ? `<red>${(8 + (player.skillLevels["skill1"] + 1) * 0.4).toFixed(1)}s</red>` : ""}\nMana: ${player.skillLevels["skill1"] > 0 ? 20 + player.skillLevels["skill1"] * 2 : ""}${player.skillLevels["skill1"] < 10 ? " / " : ""}${player.skillLevels["skill1"] < 10 ? `<red>${20 + (player.skillLevels["skill1"] + 1) * 2}</red>` : ""}`,
-      "skill2": `Dmg: ${player.skillLevels["skill2"] > 0 ? `${(20 + player.skillLevels["skill2"] * 5 + statValue).toFixed(1)} = 20 + 1 x ${statName}(${statValue})` : ""}${player.skillLevels["skill2"] < 10 ? " / " : ""}${player.skillLevels["skill2"] < 10 ? `<red>${(20 + (player.skillLevels["skill2"] + 1) * 5 + statValue).toFixed(1)} = 20 + 1 x ${statName}(${statValue})</red>` : ""}\nMana: ${player.skillLevels["skill2"] > 0 ? 15 + player.skillLevels["skill2"] * 2 : ""}${player.skillLevels["skill2"] < 10 ? " / " : ""}${player.skillLevels["skill2"] < 10 ? `<red>${15 + (player.skillLevels["skill2"] + 1) * 2}</red>` : ""}`,
-      "skill3": `Dmg/s: ${player.skillLevels["skill3"] > 0 ? `${(30 + statValue).toFixed(1)} = 30 + 1 x ${statName}(${statValue})` : ""}${player.skillLevels["skill3"] < 10 ? " / " : ""}${player.skillLevels["skill3"] < 10 ? `<red>${(30 + statValue).toFixed(1)} = 30 + 1 x ${statName}(${statValue})</red>` : ""}\nMana: ${player.skillLevels["skill3"] > 0 ? 25 + player.skillLevels["skill3"] * 2 : ""}${player.skillLevels["skill3"] < 10 ? " / " : ""}${player.skillLevels["skill3"] < 10 ? `<red>${25 + (player.skillLevels["skill3"] + 1) * 2}</red>` : ""}`,
-      "skill4": `Chance: ${player.skillLevels["skill4"] > 0 ? "15%" : ""}${player.skillLevels["skill4"] < 10 ? " / " : ""}${player.skillLevels["skill4"] < 10 ? "<red>15%</red>" : ""}\nDmg/s: ${player.skillLevels["skill4"] > 0 ? `${(5 + player.skillLevels["skill4"] * 5 + statValue * 0.5).toFixed(1)} = 5 + 0.5 x ${statName}(${statValue})` : ""}${player.skillLevels["skill4"] < 10 ? " / " : ""}${player.skillLevels["skill4"] < 10 ? `<red>${(5 + (player.skillLevels["skill4"] + 1) * 5 + statValue * 0.5).toFixed(1)} = 5 + 0.5 x ${statName}(${statValue})</red>` : ""}\nPassive`
+      "skill1": "Shout to bolster attack and health",
+      "skill2": "Swing weapon in a wide arc",
+      "skill3": "Spin towards a target location",
+      "skill4": "Chance to spawn a tornado on attack"
     } : player instanceof RichardTheRogue ? {
-      "skill1": `Arrows: ${player.skillLevels["skill1"] > 0 ? 3 + Math.floor(player.skillLevels["skill1"] / 2) : ""}${player.skillLevels["skill1"] < 10 ? " / " : ""}${player.skillLevels["skill1"] < 10 ? `<red>${3 + Math.floor((player.skillLevels["skill1"] + 1) / 2)}</red>` : ""}\nDmg/Arrow: ${player.skillLevels["skill1"] > 0 ? (20 + player.skillLevels["skill1"] * 2 + statValue * (1 + player.skillLevels["skill1"] * 0.05)).toFixed(1) : ""}${player.skillLevels["skill1"] < 10 ? " / " : ""}${player.skillLevels["skill1"] < 10 ? `<red>${(20 + (player.skillLevels["skill1"] + 1) * 2 + statValue * (1 + (player.skillLevels["skill1"] + 1) * 0.05)).toFixed(1)}</red>` : ""}\nMana: ${player.skillLevels["skill1"] > 0 ? 20 + player.skillLevels["skill1"] * 2 : ""}${player.skillLevels["skill1"] < 10 ? " / " : ""}${player.skillLevels["skill1"] < 10 ? `<red>${20 + (player.skillLevels["skill1"] + 1) * 2}</red>` : ""}`,
-      "skill2": `Dmg: ${player.skillLevels["skill2"] > 0 ? (50 + player.skillLevels["skill2"] * 5 + statValue * (2 + player.skillLevels["skill2"] * 0.1)).toFixed(1) : ""}${player.skillLevels["skill2"] < 10 ? " / " : ""}${player.skillLevels["skill2"] < 10 ? `<red>${(50 + (player.skillLevels["skill2"] + 1) * 5 + statValue * (2 + (player.skillLevels["skill2"] + 1) * 0.1)).toFixed(1)}</red>` : ""}\nMana: ${player.skillLevels["skill2"] > 0 ? 15 + player.skillLevels["skill2"] * 2 : ""}${player.skillLevels["skill2"] < 10 ? " / " : ""}${player.skillLevels["skill2"] < 10 ? `<red>${15 + (player.skillLevels["skill2"] + 1) * 2}</red>` : ""}`,
-      "skill3": `Dmg/Bolt: ${player.skillLevels["skill3"] > 0 ? (40 + player.skillLevels["skill3"] * 5 + statValue * (1 + player.skillLevels["skill3"] * 0.1)).toFixed(1) : ""}${player.skillLevels["skill3"] < 10 ? " / " : ""}${player.skillLevels["skill3"] < 10 ? `<red>${(40 + (player.skillLevels["skill3"] + 1) * 5 + statValue * (1 + (player.skillLevels["skill3"] + 1) * 0.1)).toFixed(1)}</red>` : ""}\nMax Traps: 5\nDuration: 6s or 6 shots\nMana: ${player.skillLevels["skill3"] > 0 ? (10 + player.skillLevels["skill3"] * 1.5).toFixed(1) : ""}${player.skillLevels["skill3"] < 10 ? " / " : ""}${player.skillLevels["skill3"] < 10 ? `<red>${(10 + (player.skillLevels["skill3"] + 1) * 1.5).toFixed(1)}</red>` : ""}`,
-      "skill4": `Duration: ${player.skillLevels["skill4"] > 0 ? (3 + player.skillLevels["skill4"] * 0.3).toFixed(1) : ""}${player.skillLevels["skill4"] < 10 ? " / " : ""}${player.skillLevels["skill4"] < 10 ? `<red>${(3 + (player.skillLevels["skill4"] + 1) * 0.3).toFixed(1)}</red>` : ""}s\nRadius: 150\nEffects: +50% Move Speed, +100% Atk Speed\nMana: ${player.skillLevels["skill4"] > 0 ? 20 + player.skillLevels["skill4"] * 2 : ""}${player.skillLevels["skill4"] < 10 ? " / " : ""}${player.skillLevels["skill4"] < 10 ? `<red>${20 + (player.skillLevels["skill4"] + 1) * 2}</red>` : ""}`
+      "skill1": "Fire multiple projectiles that chase enemies",
+      "skill2": "Teleport behind target for a strike",
+      "skill3": "Place a sentry firing lightning bolts",
+      "skill4": "Create a myst to hide in"
     } : player instanceof AndersonTheNecromancer ? {
-      "skill1": `DPS: ${player.skillLevels["skill1"] > 0 ? (5 + player.skillLevels["skill1"] * 1 + statValue * (0.2 + player.skillLevels["skill1"] * 0.02)).toFixed(1) : ""}${player.skillLevels["skill1"] < 10 ? " / " : ""}${player.skillLevels["skill1"] < 10 ? `<red>${(5 + (player.skillLevels["skill1"] + 1) * 1 + statValue * (0.2 + (player.skillLevels["skill1"] + 1) * 0.02)).toFixed(1)}</red>` : ""}\nDuration: ${player.skillLevels["skill1"] > 0 ? (5 + player.skillLevels["skill1"] * 0.3).toFixed(1) : ""}${player.skillLevels["skill1"] < 10 ? " / " : ""}${player.skillLevels["skill1"] < 10 ? `<red>${(5 + (player.skillLevels["skill1"] + 1) * 0.3).toFixed(1)}</red>` : ""}s\nMana: ${player.skillLevels["skill1"] > 0 ? 20 + player.skillLevels["skill1"] * 2 : ""}${player.skillLevels["skill1"] < 10 ? " / " : ""}${player.skillLevels["skill1"] < 10 ? `<red>${20 + (player.skillLevels["skill1"] + 1) * 2}</red>` : ""}\nRadius: ${player.skillLevels["skill1"] > 0 ? 100 + player.skillLevels["skill1"] * 15 : ""}${player.skillLevels["skill1"] < 10 ? " / " : ""}${player.skillLevels["skill1"] < 10 ? `<red>${100 + (player.skillLevels["skill1"] + 1) * 15}</red>` : ""}`,
-      "skill2": `Dmg: ${player.skillLevels["skill2"] > 0 ? (30 + player.skillLevels["skill2"] * 5 + statValue * (1.5 + player.skillLevels["skill2"] * 0.1)).toFixed(1) : ""}${player.skillLevels["skill2"] < 10 ? " / " : ""}${player.skillLevels["skill2"] < 10 ? `<red>${(30 + (player.skillLevels["skill2"] + 1) * 5 + statValue * (1.5 + (player.skillLevels["skill2"] + 1) * 0.1)).toFixed(1)}</red>` : ""}\nMana: ${player.skillLevels["skill2"] > 0 ? 15 + player.skillLevels["skill2"] * 2 : ""}${player.skillLevels["skill2"] < 10 ? " / " : ""}${player.skillLevels["skill2"] < 10 ? `<red>${15 + (player.skillLevels["skill2"] + 1) * 2}</red>` : ""}`,
-      "skill3": `Skeletons: ${player.skillLevels["skill3"] > 0 ? player.skillLevels["skill3"] : ""}${player.skillLevels["skill3"] < 10 ? " / " : ""}${player.skillLevels["skill3"] < 10 ? `<red>${player.skillLevels["skill3"] + 1}</red>` : ""}\nHP: ${player.skillLevels["skill3"] > 0 ? 50 + player.skillLevels["skill3"] * 10 + statValue * 5 : ""}${player.skillLevels["skill3"] < 10 ? " / " : ""}${player.skillLevels["skill3"] < 10 ? `<red>${50 + (player.skillLevels["skill3"] + 1) * 10 + statValue * 5}</red>` : ""}\nDmg: ${player.skillLevels["skill3"] > 0 ? (10 + player.skillLevels["skill3"] * 2 + statValue * 0.5).toFixed(1) : ""}${player.skillLevels["skill3"] < 10 ? " / " : ""}${player.skillLevels["skill3"] < 10 ? `<red>${(10 + (player.skillLevels["skill3"] + 1) * 2 + statValue * 0.5).toFixed(1)}</red>` : ""}\nMana: ${player.skillLevels["skill3"] > 0 ? 30 + player.skillLevels["skill3"] * 2 : ""}${player.skillLevels["skill3"] < 10 ? " / " : ""}${player.skillLevels["skill3"] < 10 ? `<red>${30 + (player.skillLevels["skill3"] + 1) * 2}</red>` : ""}`,
-      "skill4": `Dmg+: ${player.skillLevels["skill4"] > 0 ? Math.round((1.0 + player.skillLevels["skill4"] * 0.1) * 100) : ""}${player.skillLevels["skill4"] < 10 ? " / " : ""}${player.skillLevels["skill4"] < 10 ? `<red>${Math.round((1.0 + (player.skillLevels["skill4"] + 1) * 0.1) * 100)}</red>` : ""}%\nRadius: ${player.skillLevels["skill4"] > 0 ? 150 + player.skillLevels["skill4"] * 15 : ""}${player.skillLevels["skill4"] < 10 ? " / " : ""}${player.skillLevels["skill4"] < 10 ? `<red>${150 + (player.skillLevels["skill4"] + 1) * 15}</red>` : ""}\nDuration: ${player.skillLevels["skill4"] > 0 ? (5 + player.skillLevels["skill4"] * 0.6).toFixed(1) : ""}${player.skillLevels["skill4"] < 10 ? " / " : ""}${player.skillLevels["skill4"] < 10 ? `<red>${(5 + (player.skillLevels["skill4"] + 1) * 0.6).toFixed(1)}</red>` : ""}s\nMana: ${player.skillLevels["skill4"] > 0 ? 25 + player.skillLevels["skill4"] * 2 : ""}${player.skillLevels["skill4"] < 10 ? " / " : ""}${player.skillLevels["skill4"] < 10 ? `<red>${25 + (player.skillLevels["skill4"] + 1) * 2}</red>` : ""}`
+      "skill1": "Release a circle of poisonous projectiles",
+      "skill2": "Launch a piercing bone spear",
+      "skill3": "Summon a skeleton to fight",
+      "skill4": "Curse enemies to take more damage"
     } : {
-      "skill1": `Bolts: ${player.skillLevels["skill1"] > 0 ? 4 + player.skillLevels["skill1"] * 2 : ""}${player.skillLevels["skill1"] < 10 ? " / " : ""}${player.skillLevels["skill1"] < 10 ? `<red>${4 + (player.skillLevels["skill1"] + 1) * 2}</red>` : ""}\nDmg/Bolt: ${player.skillLevels["skill1"] > 0 ? (15 + player.skillLevels["skill1"] * 2 + statValue * (1 + player.skillLevels["skill1"] * 0.1)).toFixed(1) : ""}${player.skillLevels["skill1"] < 10 ? " / " : ""}${player.skillLevels["skill1"] < 10 ? `<red>${(15 + (player.skillLevels["skill1"] + 1) * 2 + statValue * (1 + (player.skillLevels["skill1"] + 1) * 0.1)).toFixed(1)}</red>` : ""}\nMana: ${player.skillLevels["skill1"] > 0 ? 20 + player.skillLevels["skill1"] * 2 : ""}${player.skillLevels["skill1"] < 10 ? " / " : ""}${player.skillLevels["skill1"] < 10 ? `<red>${20 + (player.skillLevels["skill1"] + 1) * 2}</red>` : ""}`,
-      "skill2": `Dmg: ${player.skillLevels["skill2"] > 0 ? ((35 + player.skillLevels["skill2"] * 5 + statValue * (1.5 + player.skillLevels["skill2"] * 0.1)) * 2 / 3).toFixed(1) : ""}${player.skillLevels["skill2"] < 10 ? " / " : ""}${player.skillLevels["skill2"] < 10 ? `<red>${((35 + (player.skillLevels["skill2"] + 1) * 5 + statValue * (1.5 + (player.skillLevels["skill2"] + 1) * 0.1)) * 2 / 3).toFixed(1)}</red>` : ""}\nRadius: 200\nMana: ${player.skillLevels["skill2"] > 0 ? 15 + player.skillLevels["skill2"] * 2 : ""}${player.skillLevels["skill2"] < 10 ? " / " : ""}${player.skillLevels["skill2"] < 10 ? `<red>${15 + (player.skillLevels["skill2"] + 1) * 2}</red>` : ""}`,
-      "skill3": `DPS: ${player.skillLevels["skill3"] > 0 ? (25 + player.skillLevels["skill3"] * 5 + statValue * (1 + player.skillLevels["skill3"] * 0.1)).toFixed(1) : ""}${player.skillLevels["skill3"] < 10 ? " / " : ""}${player.skillLevels["skill3"] < 10 ? `<red>${(25 + (player.skillLevels["skill3"] + 1) * 5 + statValue * (1 + (player.skillLevels["skill3"] + 1) * 0.1)).toFixed(1)}</red>` : ""}\nSlow: 50%\nSize: 150\nMana: ${player.skillLevels["skill3"] > 0 ? 15 + player.skillLevels["skill3"] * 2 : ""}${player.skillLevels["skill3"] < 10 ? " / " : ""}${player.skillLevels["skill3"] < 10 ? `<red>${15 + (player.skillLevels["skill3"] + 1) * 2}</red>` : ""}`,
-      "skill4": `DPS: ${player.skillLevels["skill4"] > 0 ? (30 + player.skillLevels["skill4"] * 5 + statValue * (1.5 + player.skillLevels["skill4"] * 0.1)).toFixed(1) : ""}${player.skillLevels["skill4"] < 10 ? " / " : ""}${player.skillLevels["skill4"] < 10 ? `<red>${(30 + (player.skillLevels["skill4"] + 1) * 5 + statValue * (1.5 + (player.skillLevels["skill4"] + 1) * 0.1)).toFixed(1)}</red>` : ""}\nMana: ${player.skillLevels["skill4"] > 0 ? 30 + player.skillLevels["skill4"] * 2 : ""}${player.skillLevels["skill4"] < 10 ? " / " : ""}${player.skillLevels["skill4"] < 10 ? `<red>${30 + (player.skillLevels["skill4"] + 1) * 2}</red>` : ""}`
+      "skill1": "Launch erratic bolts of lightning",
+      "skill2": "Emit a shockwave of energy",
+      "skill3": "Summon a chilling storm",
+      "skill4": "Erect a wall of flames"
     };
-    if (hoveredItem === "hp") details[hoveredItem] = `Restores ${50 + player.strength * 2} HP = 50 + 2 x STR (${player.strength})\nMax Potions: 10`;
-    else if (hoveredItem === "mp") details[hoveredItem] = `Restores ${30 + player.intelligence * 1.5} MP = 30 + 1.5 x INT (${player.intelligence})\nMax Potions: 10`;
+    let stats = player instanceof BrianTheBarbarian ? {
+      "skill1": [
+        `Increase Dmg: ${player.skillLevels["skill1"] > 0 ? `${Math.round((0.2 + player.skillLevels["skill1"] * 0.02) * 100)}%` : ""}${player.skillLevels["skill1"] < 10 ? ` (${Math.round((0.2 + (player.skillLevels["skill1"] + 1) * 0.02) * 100)}%)` : ""}`,
+        `Increase HP: ${player.skillLevels["skill1"] > 0 ? `${Math.round((0.11 + player.skillLevels["skill1"] * 0.01) * 100)}%` : ""}${player.skillLevels["skill1"] < 10 ? ` (${Math.round((0.11 + (player.skillLevels["skill1"] + 1) * 0.01) * 100)}%)` : ""}`,
+        `Duration: ${player.skillLevels["skill1"] > 0 ? `${(8 + player.skillLevels["skill1"] * 0.4).toFixed(1)}s` : ""}${player.skillLevels["skill1"] < 10 ? ` (${(8 + (player.skillLevels["skill1"] + 1) * 0.4).toFixed(1)}s)` : ""}`,
+        `Mana: ${player.skillLevels["skill1"] > 0 ? `${20 + player.skillLevels["skill1"] * 2}` : ""}${player.skillLevels["skill1"] < 10 ? ` (${20 + (player.skillLevels["skill1"] + 1) * 2})` : ""}`
+      ],
+      "skill2": [
+        `Dmg: ${player.skillLevels["skill2"] > 0 ? `${15 + player.skillLevels["skill2"] * 5 + statValue}` : ""}${player.skillLevels["skill2"] < 10 ? ` (${15 + (player.skillLevels["skill2"] + 1) * 5 + statValue})` : ""}`,
+        `Mana: ${player.skillLevels["skill2"] > 0 ? `${15 + player.skillLevels["skill2"] * 2}` : ""}${player.skillLevels["skill2"] < 10 ? ` (${15 + (player.skillLevels["skill2"] + 1) * 2})` : ""}`
+      ],
+      "skill3": [
+        `Dmg/s: ${player.skillLevels["skill3"] > 0 ? `${35 + player.skillLevels["skill3"] * 5 + statValue}` : ""}${player.skillLevels["skill3"] < 10 ? ` (${35 + (player.skillLevels["skill3"] + 1) * 5 + statValue})` : ""}`,
+        `Mana: ${player.skillLevels["skill3"] > 0 ? `${25 + player.skillLevels["skill3"] * 2}` : ""}${player.skillLevels["skill3"] < 10 ? ` (${25 + (player.skillLevels["skill3"] + 1) * 2})` : ""}`
+      ],
+      "skill4": [
+        `Chance: ${player.skillLevels["skill4"] > 0 ? `${Math.round((0.10 + player.skillLevels["skill4"] * 0.05) * 100)}%` : ""}${player.skillLevels["skill4"] < 10 ? ` (${Math.round((0.10 + (player.skillLevels["skill4"] + 1) * 0.05) * 100)}%)` : ""}`,
+        `Dmg/s: ${player.skillLevels["skill4"] > 0 ? `${player.skillLevels["skill4"] === 1 ? 5 + statValue * 0.5 : 10 + statValue * 0.5}` : ""}${player.skillLevels["skill4"] < 10 ? ` (${player.skillLevels["skill4"] + 1 === 1 ? 5 + statValue * 0.5 : 10 + statValue * 0.5})` : ""}`,
+        "Passive"
+      ]
+    } : player instanceof RichardTheRogue ? {
+      "skill1": [
+        `Arrows: ${player.skillLevels["skill1"] > 0 ? `${2 + player.skillLevels["skill1"]}` : ""}${player.skillLevels["skill1"] < 10 ? ` (${2 + (player.skillLevels["skill1"] + 1)})` : ""}`,
+        `Dmg/Arrow: ${player.skillLevels["skill1"] > 0 ? `${(5 + player.skillLevels["skill1"] * 5 + statValue).toFixed(1)}` : ""}${player.skillLevels["skill1"] < 10 ? ` (${(5 + (player.skillLevels["skill1"] + 1) * 5 + statValue).toFixed(1)})` : ""}`,
+        `Mana: ${player.skillLevels["skill1"] > 0 ? `${20 + player.skillLevels["skill1"] * 2}` : ""}${player.skillLevels["skill1"] < 10 ? ` (${20 + (player.skillLevels["skill1"] + 1) * 2})` : ""}`
+      ],
+      "skill2": [
+        `Dmg: ${player.skillLevels["skill2"] > 0 ? `${(20 + player.skillLevels["skill2"] * 10 + statValue * 2).toFixed(1)}` : ""}${player.skillLevels["skill2"] < 10 ? ` (${(20 + (player.skillLevels["skill2"] + 1) * 10 + statValue * 2).toFixed(1)})` : ""}`,
+        `Mana: ${player.skillLevels["skill2"] > 0 ? `${15 + player.skillLevels["skill2"] * 2}` : ""}${player.skillLevels["skill2"] < 10 ? ` (${15 + (player.skillLevels["skill2"] + 1) * 2})` : ""}`
+      ],
+      "skill3": [
+        `Dmg/Bolt: ${player.skillLevels["skill3"] > 0 ? `${(10 + player.skillLevels["skill3"] * 10 + statValue).toFixed(1)}` : ""}${player.skillLevels["skill3"] < 10 ? ` (${(10 + (player.skillLevels["skill3"] + 1) * 10 + statValue).toFixed(1)})` : ""}`,
+        "Max Traps: 5",
+        "Duration: 6s or 6 shots",
+        `Mana: ${player.skillLevels["skill3"] > 0 ? `${(10 + player.skillLevels["skill3"] * 1.5).toFixed(1)}` : ""}${player.skillLevels["skill3"] < 10 ? ` (${(10 + (player.skillLevels["skill3"] + 1) * 1.5).toFixed(1)})` : ""}`
+      ],
+      "skill4": [
+        `Duration: ${player.skillLevels["skill4"] > 0 ? `${(3 + player.skillLevels["skill4"] * 0.3).toFixed(1)}s` : ""}${player.skillLevels["skill4"] < 10 ? ` (${(3 + (player.skillLevels["skill4"] + 1) * 0.3).toFixed(1)}s)` : ""}`,
+        "Radius: 150",
+        "Move Speed: +50%",
+        "Attack Speed: +100%",
+        `Mana: ${player.skillLevels["skill4"] > 0 ? `${20 + player.skillLevels["skill4"] * 2}` : ""}${player.skillLevels["skill4"] < 10 ? ` (${20 + (player.skillLevels["skill4"] + 1) * 2})` : ""}`
+      ]
+    } : player instanceof AndersonTheNecromancer ? {
+      "skill1": [
+        `Dmg/s: ${player.skillLevels["skill1"] > 0 ? `${(8 + player.skillLevels["skill1"] * 3 + statValue * 0.5).toFixed(1)}` : ""}${player.skillLevels["skill1"] < 10 ? ` (${(8 + (player.skillLevels["skill1"] + 1) * 3 + statValue * 0.5).toFixed(1)})` : ""}`,
+        "Duration: 5s",
+        `Radius: ${player.skillLevels["skill1"] > 0 ? `${100 + player.skillLevels["skill1"] * 15}` : ""}${player.skillLevels["skill1"] < 10 ? ` (${100 + (player.skillLevels["skill1"] + 1) * 15})` : ""}`,
+        `Mana: ${player.skillLevels["skill1"] > 0 ? `${20 + player.skillLevels["skill1"] * 2}` : ""}${player.skillLevels["skill1"] < 10 ? ` (${20 + (player.skillLevels["skill1"] + 1) * 2})` : ""}`
+      ],
+      "skill2": [
+        `Dmg: ${player.skillLevels["skill2"] > 0 ? `${15 + player.skillLevels["skill2"] * 5 + statValue}` : ""}${player.skillLevels["skill2"] < 10 ? ` (${15 + (player.skillLevels["skill2"] + 1) * 5 + statValue})` : ""}`,
+        `Mana: ${player.skillLevels["skill2"] > 0 ? `${15 + player.skillLevels["skill2"] * 2}` : ""}${player.skillLevels["skill2"] < 10 ? ` (${15 + (player.skillLevels["skill2"] + 1) * 2})` : ""}`
+      ],
+      "skill3": [
+        `Skeletons: ${player.skillLevels["skill3"] > 0 ? `${player.skillLevels["skill3"]}` : ""}${player.skillLevels["skill3"] < 10 ? ` (${player.skillLevels["skill3"] + 1})` : ""}`,
+        `HP: ${player.skillLevels["skill3"] > 0 ? `${statValue * 10} = 10 x ${statName} (${statValue})` : ""}${player.skillLevels["skill3"] < 10 ? ` (${statValue * 10} = 10 x ${statName} (${statValue}))` : ""}`,
+        `Dmg: ${player.skillLevels["skill3"] > 0 ? `${(statValue * 2).toFixed(1)} = 2 x ${statName} (${statValue})` : ""}${player.skillLevels["skill3"] < 10 ? ` (${(statValue * 2).toFixed(1)} = 2 x ${statName} (${statValue}))` : ""}`,
+        `Mana: ${player.skillLevels["skill3"] > 0 ? `${30 + player.skillLevels["skill3"] * 2}` : ""}${player.skillLevels["skill3"] < 10 ? ` (${30 + (player.skillLevels["skill3"] + 1) * 2})` : ""}`
+      ],
+      "skill4": [
+        `Increase Dmg: ${player.skillLevels["skill4"] > 0 ? `${Math.round((1.0 + player.skillLevels["skill4"] * 0.1) * 100)}%` : ""}${player.skillLevels["skill4"] < 10 ? ` (${Math.round((1.0 + (player.skillLevels["skill4"] + 1) * 0.1) * 100)}%)` : ""}`,
+        `Radius: ${player.skillLevels["skill4"] > 0 ? `${150 + player.skillLevels["skill4"] * 15}` : ""}${player.skillLevels["skill4"] < 10 ? ` (${150 + (player.skillLevels["skill4"] + 1) * 15})` : ""}`,
+        `Duration: ${player.skillLevels["skill4"] > 0 ? `${(5 + player.skillLevels["skill4"] * 0.6).toFixed(1)}s` : ""}${player.skillLevels["skill4"] < 10 ? ` (${(5 + (player.skillLevels["skill4"] + 1) * 0.6).toFixed(1)}s)` : ""}`,
+        `Mana: ${player.skillLevels["skill4"] > 0 ? `${25 + player.skillLevels["skill4"] * 2}` : ""}${player.skillLevels["skill4"] < 10 ? ` (${25 + (player.skillLevels["skill4"] + 1) * 2})` : ""}`
+      ]
+    } : {
+      "skill1": [
+        `Bolts: ${player.skillLevels["skill1"] > 0 ? `${4 + player.skillLevels["skill1"] * 2}` : ""}${player.skillLevels["skill1"] < 10 ? ` (${4 + (player.skillLevels["skill1"] + 1) * 2})` : ""}`,
+        `Dmg/Bolt: ${player.skillLevels["skill1"] > 0 ? `${(5 + player.skillLevels["skill1"] * 5 + statValue).toFixed(1)}` : ""}${player.skillLevels["skill1"] < 10 ? ` (${(5 + (player.skillLevels["skill1"] + 1) * 5 + statValue).toFixed(1)})` : ""}`,
+        `Mana: ${player.skillLevels["skill1"] > 0 ? `${20 + player.skillLevels["skill1"] * 2}` : ""}${player.skillLevels["skill1"] < 10 ? ` (${20 + (player.skillLevels["skill1"] + 1) * 2})` : ""}`
+      ],
+      "skill2": [
+        `Dmg: ${player.skillLevels["skill2"] > 0 ? `${(10 + player.skillLevels["skill2"] * 5 + statValue).toFixed(1)}` : ""}${player.skillLevels["skill2"] < 10 ? ` (${(10 + (player.skillLevels["skill2"] + 1) * 5 + statValue).toFixed(1)})` : ""}`,
+        "Radius: 200",
+        `Mana: ${player.skillLevels["skill2"] > 0 ? `${15 + player.skillLevels["skill2"] * 2}` : ""}${player.skillLevels["skill2"] < 10 ? ` (${15 + (player.skillLevels["skill2"] + 1) * 2})` : ""}`
+      ],
+      "skill3": [
+        `Dmg/s: ${player.skillLevels["skill3"] > 0 ? `${(30 + player.skillLevels["skill3"] * 5 + statValue).toFixed(1)}` : ""}${player.skillLevels["skill3"] < 10 ? ` (${(30 + (player.skillLevels["skill3"] + 1) * 5 + statValue).toFixed(1)})` : ""}`,
+        `Slow: ${player.skillLevels["skill3"] > 0 ? `${Math.round((0.50 + player.skillLevels["skill3"] * 0.03) * 100)}%` : ""}${player.skillLevels["skill3"] < 10 ? ` (${Math.round((0.50 + (player.skillLevels["skill3"] + 1) * 0.03) * 100)}%)` : ""}`,
+        "Size: 150",
+        `Mana: ${player.skillLevels["skill3"] > 0 ? `${15 + player.skillLevels["skill3"] * 2}` : ""}${player.skillLevels["skill3"] < 10 ? ` (${15 + (player.skillLevels["skill3"] + 1) * 2})` : ""}`
+      ],
+      "skill4": [
+        `Dmg/s: ${player.skillLevels["skill4"] > 0 ? `${(30 + player.skillLevels["skill4"] * 10 + statValue * 2).toFixed(1)}` : ""}${player.skillLevels["skill4"] < 10 ? ` (${(30 + (player.skillLevels["skill4"] + 1) * 10 + statValue * 2).toFixed(1)})` : ""}`,
+        "Duration: 5s",
+        `Mana: ${player.skillLevels["skill4"] > 0 ? `${30 + player.skillLevels["skill4"] * 2}` : ""}${player.skillLevels["skill4"] < 10 ? ` (${30 + (player.skillLevels["skill4"] + 1) * 2})` : ""}`
+      ]
+    };
+    if (hoveredItem === "hp") {
+      details[hoveredItem] = "Restores health instantly";
+      stats[hoveredItem] = [`Restores: ${50 + player.strength * 2} HP`, "Max Potions: 10"];
+    } else if (hoveredItem === "mp") {
+      details[hoveredItem] = "Restores mana instantly";
+      stats[hoveredItem] = [`Restores: ${30 + player.intelligence * 1.5} MP`, "Max Potions: 10"];
+    }
     if (hoveredItem in details) {
       fill(WHITE);
       textSize(18);
       textAlign(LEFT, TOP);
-      let textLines = details[hoveredItem].split('\n');
-      let yOffset = detailbox.y + 5;
-      textLines.forEach(line => {
-        let parts = line.split(/(<red>.*?<\/red>)/);
-        let xOffset = detailbox.x + 5;
-        let currentLine = "";
-        parts.forEach(part => {
-          let textPart = part.replace(/<red>|<\/red>/g, "");
-          if (textWidth(currentLine + textPart) + xOffset - detailbox.x > detailbox.w) {
-            text(currentLine, xOffset, yOffset);
-            yOffset += 20;
-            currentLine = textPart;
-            xOffset = detailbox.x + 5;
-          } else {
-            currentLine += textPart;
-          }
-          if (part.match(/<red>.*<\/red>/)) {
-            fill(RED);
-            text(textPart, xOffset, yOffset);
-            xOffset += textWidth(textPart);
-          } else {
-            fill(WHITE);
-            text(textPart, xOffset, yOffset);
-            xOffset += textWidth(textPart);
-          }
-        });
-        if (currentLine) {
-          text(currentLine, detailbox.x + 5, yOffset);
-          yOffset += 20;
+      text(details[hoveredItem], detailbox.x + 5, detailbox.y + 5);
+      let yOffset = detailbox.y + 25;
+      stats[hoveredItem].forEach(stat => {
+        let [label, current, next] = stat.match(/([^:]+):?\s*([^\(]*)\s*(\(.*\))?/)?.slice(1) || [stat, "", ""];
+        let currentValue = current.trim();
+        let nextValue = next ? next.slice(1, -1).trim() : "";
+        let level = player.skillLevels[hoveredItem] || 0;
+        fill(WHITE);
+        text(label + ": ", detailbox.x + 5, yOffset);
+        let xOffset = detailbox.x + 5 + textWidth(label + ": ");
+        if (level > 0 || hoveredItem === "hp" || hoveredItem === "mp") {
+          fill(WHITE);
+          text(currentValue, xOffset, yOffset);
+          xOffset += textWidth(currentValue) + 5;
         }
+        if (level < 10 && nextValue && (!currentValue || currentValue !== nextValue) && hoveredItem !== "hp" && hoveredItem !== "mp") {
+          fill(RED);
+          text("(" + nextValue + ")", xOffset, yOffset);
+        }
+        yOffset += 20;
       });
     }
   }
@@ -1711,6 +1836,7 @@ function mousePressed() {
       sentries = [];
       fireWalls = [];
       tornadoes = [];
+      player.spellAnimation = null;
       gameRunning = true;
       gameOver = false;
     } else if (mouseX > WIDTH / 2 + 20 && mouseX < WIDTH / 2 + 120 && mouseY > HEIGHT / 2 + 20 && mouseY < HEIGHT / 2 + 60) {
@@ -1724,6 +1850,7 @@ function mousePressed() {
       sentries = [];
       fireWalls = [];
       tornadoes = [];
+      player.spellAnimation = null;
     }
   }
 }
@@ -1741,35 +1868,38 @@ function keyPressed() {
     }
   } else if (gameRunning && !paused && !gameOver) {
     let targets = enemies.filter(e => e.isAlive).concat(player.skeletons || []);
-    if (keyIsDown(51) && player.skillLevels["skill1"] > 0 && spellCooldown === 0) { // '3'
-      let damage = player.skill1(targets, [mouseX, mouseY]);
-      if (damage || damage === true) spellCooldown = Math.round(60 / player.castSpeed);
-    }
-    if (keyIsDown(52) && player.skillLevels["skill2"] > 0 && spellCooldown === 0) { // '4'
-      let damage = player.skill2(targets, [mouseX, mouseY]);
-      if (damage && player instanceof BrianTheBarbarian && player.skillLevels["skill4"] > 0 && random() < 0.15) {
-        let closest = targets.reduce((min, t) => {
-          let d = Math.hypot(t.x - mouseX, t.y - mouseY);
-          return (t.isAlive && d < min.dist) ? { target: t, dist: d } : min;
-        }, { target: null, dist: Infinity }).target;
-        if (closest) tornadoes.push(new Tornado(closest.x, closest.y, player.skillLevels["skill4"], player.strength));
+    let isWhirlwinding = player.spellAnimation?.type === "whirlwind" && player.targetPos;
+    if (!isWhirlwinding) {
+      if (keyIsDown(51) && player.skillLevels["skill1"] > 0 && spellCooldown === 0) { // '3'
+        let damage = player.skill1(targets, [mouseX, mouseY]);
+        if (damage || damage === true) spellCooldown = Math.round(60 / player.castSpeed);
       }
-      if (damage) spellCooldown = Math.round(60 / player.castSpeed);
-    }
-    if (keyIsDown(69) && player.skillLevels["skill3"] > 0 && spellCooldown === 0) { // 'e'
-      let damage = player.skill3(targets, [mouseX, mouseY]);
-      if (damage && player instanceof BrianTheBarbarian && player.skillLevels["skill4"] > 0 && random() < 0.15) {
-        let closest = targets.reduce((min, t) => {
-          let d = Math.hypot(t.x - mouseX, t.y - mouseY);
-          return (t.isAlive && d < min.dist) ? { target: t, dist: d } : min;
-        }, { target: null, dist: Infinity }).target;
-        if (closest) tornadoes.push(new Tornado(closest.x, closest.y, player.skillLevels["skill4"], player.strength));
+      if (keyIsDown(52) && player.skillLevels["skill2"] > 0 && spellCooldown === 0) { // '4'
+        let damage = player.skill2(targets, [mouseX, mouseY]);
+        if (damage && player instanceof BrianTheBarbarian && player.skillLevels["skill4"] > 0 && random() < (0.10 + player.skillLevels["skill4"] * 0.05)) {
+          let closest = targets.reduce((min, t) => {
+            let d = Math.hypot(t.x - mouseX, t.y - mouseY);
+            return (t.isAlive && d < min.dist) ? { target: t, dist: d } : min;
+          }, { target: null, dist: Infinity }).target;
+          if (closest) tornadoes.push(new Tornado(closest.x, closest.y, player.skillLevels["skill4"], player.strength));
+        }
+        if (damage) spellCooldown = Math.round(60 / player.castSpeed);
       }
-      if (damage) spellCooldown = Math.round(60 / player.castSpeed);
-    }
-    if (keyIsDown(82) && player.skillLevels["skill4"] > 0 && spellCooldown === 0) { // 'r'
-      let damage = player.skill4(targets, [mouseX, mouseY]);
-      if (damage || damage === true) spellCooldown = Math.round(60 / player.castSpeed);
+      if (keyIsDown(69) && player.skillLevels["skill3"] > 0 && spellCooldown === 0) { // 'e'
+        let damage = player.skill3(targets, [mouseX, mouseY]);
+        if (damage && player instanceof BrianTheBarbarian && player.skillLevels["skill4"] > 0 && random() < (0.10 + player.skillLevels["skill4"] * 0.05)) {
+          let closest = targets.reduce((min, t) => {
+            let d = Math.hypot(t.x - mouseX, t.y - mouseY);
+            return (t.isAlive && d < min.dist) ? { target: t, dist: d } : min;
+          }, { target: null, dist: Infinity }).target;
+          if (closest) tornadoes.push(new Tornado(closest.x, closest.y, player.skillLevels["skill4"], player.strength));
+        }
+        if (damage) spellCooldown = Math.round(60 / player.castSpeed);
+      }
+      if (keyIsDown(82) && player.skillLevels["skill4"] > 0 && spellCooldown === 0) { // 'r'
+        let damage = player.skill4(targets, [mouseX, mouseY]);
+        if (damage || damage === true) spellCooldown = Math.round(60 / player.castSpeed);
+      }
     }
     if (key === '1') player.usePotion("hp");
     if (key === '2') player.usePotion("mp");
