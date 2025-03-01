@@ -108,6 +108,7 @@ class Character {
     this.radius = 15;
     this.meleeRange = 50;
     this.rotation = 0;
+    this.spellHeld = { skill1: false, skill2: false, skill3: false, skill4: false }; // For continuous casting
     this.updateStats();
   }
 
@@ -215,6 +216,12 @@ class Character {
     }
   }
 
+  castSpell(spell, targets, mousePos) {
+    if (spellCooldown > 0 || (this.spellAnimation && this.spellAnimation.type === "whirlwind")) return;
+    let damage = this[spell](targets, mousePos);
+    if (damage || damage === true) spellCooldown = Math.round(60 / this.castSpeed);
+  }
+
   draw() {
     push();
     translate(this.x, this.y);
@@ -279,7 +286,7 @@ class BrianTheBarbarian extends Character {
     let affectedEnemies = [];
     for (let target of targets) {
       if (Math.hypot(target.x - centerX, target.y - centerY) < 50 && target.isAlive && !affectedEnemies.includes(target)) {
-        target.takeDamage(damage);
+        target.takeDamage(damage * (1 + (target.damageAmplify || 0)));
         affectedEnemies.push(target);
         if (this.skillLevels["skill4"] > 0 && random() < (0.10 + this.skillLevels["skill4"] * 0.05)) {
           tornadoes.push(new Tornado(target.x, target.y, this.skillLevels["skill4"], this.strength));
@@ -332,19 +339,25 @@ class RichardTheRogue extends Character {
     let manaCost = 20 + level * 2;
     if (this.mp < manaCost) return 0;
     this.mp -= manaCost;
-    let arrowCount = 2 + (level - 1) * 1;
-    let damagePerArrow = 23 + (level - 1) * 7;
-    let anim = { type: "guidedArrows", count: arrowCount, damage: damagePerArrow, x: this.x, y: this.y, targets: targets, duration: 60 };
+    let arrowCount = 2 + (level - 1); // 2 at lvl 1, 3 at lvl 2, etc.
+    let damagePerArrow = 23 + (level - 1) * 7; // 23 at lvl 1, +7 per level
     let aliveTargets = targets.filter(t => t.isAlive);
     for (let i = 0; i < arrowCount; i++) {
-      let targetObj = aliveTargets.length > 0 ? 
-        { x: aliveTargets[i % aliveTargets.length].x, y: aliveTargets[i % aliveTargets.length].y, enemy: aliveTargets[i % aliveTargets.length] } : 
-        { dx: random(-1, 1), dy: random(-1, 1), randomMove: true };
-      let dist = Math.hypot(targetObj.dx || 0, targetObj.dy || 0);
-      if (dist > 0 && targetObj.randomMove) { targetObj.dx /= dist; targetObj.dy /= dist; }
-      arrows.push({ x: this.x, y: this.y, target: targetObj, damage: damagePerArrow, duration: 300 });
+      let dx = mousePos[0] - this.x;
+      let dy = mousePos[1] - this.y;
+      let dist = Math.hypot(dx, dy);
+      if (dist > 0) { dx /= dist; dy /= dist; }
+      let target = aliveTargets.length > 0 ? aliveTargets[i % aliveTargets.length] : null;
+      arrows.push({
+        x: this.x,
+        y: this.y,
+        dx: dx,
+        dy: dy,
+        damage: damagePerArrow,
+        duration: 300,
+        target: target
+      });
     }
-    this.spellAnimation = anim;
     spellMessage = { text: "Multi-Guided Arrows casted", timer: 180 };
     console.log(`${this.name} uses Multi-Guided Arrows: ${arrowCount} arrows`);
     return damagePerArrow * arrowCount;
@@ -359,7 +372,7 @@ class RichardTheRogue extends Character {
       let d = Math.hypot(t.x - mousePos[0], t.y - mousePos[1]);
       return (t.isAlive && d < min.dist) ? { target: t, dist: d } : min;
     }, { target: null, dist: Infinity }).target;
-    if (!closest || Math.hypot(closest.x - mousePos[0], closest.y - mousePos[1]) >= closest.radius + 10) return 0; // No cast if no enemy targeted
+    if (!closest || Math.hypot(closest.x - mousePos[0], closest.y - mousePos[1]) >= closest.radius + 10) return 0;
     this.mp -= manaCost;
     let damage = 60 + (level - 1) * 10;
     let dx = closest.x - this.x;
@@ -371,9 +384,9 @@ class RichardTheRogue extends Character {
       this.x = closest.x - dx * (closest.radius + this.radius + 5);
       this.y = closest.y - dy * (closest.radius + this.radius + 5);
       this.targetPos = null;
-      if (!mysts.some(myst => myst.isInside(this.x, this.y))) this.vanishTimer = 0; // Lose vanish if teleporting out
+      if (!mysts.some(myst => myst.isInside(this.x, this.y))) this.vanishTimer = 0;
     }
-    closest.takeDamage(damage);
+    closest.takeDamage(damage * (1 + (closest.damageAmplify || 0)));
     this.spellAnimation = { type: "circle", color: GREEN.slice(), radius: 30, x: closest.x, y: closest.y, duration: 15 };
     spellMessage = { text: "Shadow Step casted", timer: 180 };
     console.log(`${this.name} uses Shadow Step for ${damage} damage`);
@@ -404,7 +417,7 @@ class RichardTheRogue extends Character {
     let radius = 150;
     mysts.push(new Myst(this.x, this.y, radius, duration));
     if (mysts.length > 1) mysts.shift();
-    this.vanishTimer = duration; // Apply vanish if inside myst
+    this.vanishTimer = duration;
     spellMessage = { text: "Vanish casted", timer: 180 };
     console.log(`${this.name} uses Vanish: Myst for ${(3 + (level - 1) * 0.3).toFixed(1)} sec`);
     return true;
@@ -432,7 +445,19 @@ class AndersonTheNecromancer extends Character {
     let anim = { type: "poisonNova", x: castX, y: castY, dps: dps, duration: 60, targets: targets, radius: radius };
     for (let i = 0; i < 50; i++) {
       let angle = (i / 50) * TWO_PI;
-      bolts.push({ type: "poisonNova", x: castX, y: castY, dx: cos(angle) * 2, dy: sin(angle) * 2, damage: dps, duration: 240, radius: radius, castX: castX, castY: castY });
+      bolts.push({ 
+        type: "poisonNova", 
+        x: castX, 
+        y: castY, 
+        dx: cos(angle) * 2, 
+        dy: sin(angle) * 2, 
+        damage: dps, 
+        duration: 240, 
+        radius: radius, 
+        castX: castX, 
+        castY: castY,
+        hitEnemies: []
+      });
     }
     this.spellAnimation = anim;
     spellMessage = { text: "Poison Nova casted", timer: 180 };
@@ -504,7 +529,6 @@ class JeffTheMage extends Character {
     super("Jeff", x, y, 5, 7, 20, 1, 1, 2, 70, 100, 10, 2.0, 1.0, 2.0, 1.2, level);
     this.color = [139, 69, 19];
     this.skillNames = ["Charged Bolt [3]", "Nova [4]", "Blizzard [e]", "Fire Wall [r]"];
-    this.blizzardCooldown = 0;
     this.originalColor = [139, 69, 19];
   }
 
@@ -546,11 +570,10 @@ class JeffTheMage extends Character {
 
   skill3(targets, mousePos) {
     let level = this.skillLevels["skill3"];
-    if (level === 0 || this.blizzardCooldown > 0) return 0;
+    if (level === 0) return 0;
     let manaCost = 30 + (level - 1) * 5;
     if (this.mp < manaCost) return 0;
     this.mp -= manaCost;
-    this.blizzardCooldown = 240; // 4-second cooldown
     let damagePerSecond = 30 + (level - 1) * 5;
     let slow = 0.50 + (level - 1) * 0.03;
     fireWalls.push({
@@ -565,7 +588,7 @@ class JeffTheMage extends Character {
       targets: targets
     });
     let blizzards = fireWalls.filter(f => f.type === "blizzard");
-    if (blizzards.length > 2) fireWalls.splice(fireWalls.indexOf(blizzards[0]), 1); // Max 2 blizzards
+    if (blizzards.length > 2) fireWalls.splice(fireWalls.indexOf(blizzards[0]), 1);
     spellMessage = { text: "Blizzard casted", timer: 180 };
     console.log(`${this.name} uses Blizzard for ${damagePerSecond} damage per second`);
     return damagePerSecond * 4; // Total damage over duration
@@ -728,8 +751,6 @@ function playGame() {
     });
   }
 
-  if (player instanceof JeffTheMage) player.blizzardCooldown = max(0, player.blizzardCooldown - 1);
-
   if (player.isAlive) {
     if (isWhirlwind && player.spellAnimation) {
       player.rotation += PI / 6;
@@ -810,29 +831,39 @@ function playGame() {
   });
 
   arrows = arrows.filter(arrow => {
-    let targetX = arrow.target.enemy && arrow.target.enemy.isAlive ? arrow.target.enemy.x : (arrow.target.randomMove ? arrow.x + arrow.target.dx * 5 : arrow.target.x);
-    let targetY = arrow.target.enemy && arrow.target.enemy.isAlive ? arrow.target.enemy.y : (arrow.target.randomMove ? arrow.y + arrow.target.dy * 5 : arrow.target.y);
-    let dx = targetX - arrow.x;
-    let dy = targetY - arrow.y;
-    let dist = Math.hypot(dx, dy);
-    if (dist > 5) {
-      dx /= dist;
-      dy /= dist;
-      arrow.x += dx * 5;
-      arrow.y += dy * 5;
+    let aliveEnemies = enemies.filter(e => e.isAlive);
+    if (aliveEnemies.length > 0 && arrow.target && arrow.target.isAlive) {
+      let dx = arrow.target.x - arrow.x;
+      let dy = arrow.target.y - arrow.y;
+      let dist = Math.hypot(dx, dy);
+      if (dist > 5) {
+        dx /= dist;
+        dy /= dist;
+        arrow.dx = dx;
+        arrow.dy = dy;
+      }
     }
+    arrow.x += arrow.dx * 5;
+    arrow.y += arrow.dy * 5;
     arrow.duration--;
+
     let hitEnemy = enemies.find(enemy => enemy.isAlive && Math.hypot(enemy.x - arrow.x, enemy.y - arrow.y) < enemy.radius + 5);
     if (hitEnemy) {
-      hitEnemy.takeDamage(arrow.damage);
+      hitEnemy.takeDamage(arrow.damage * (1 + (hitEnemy.damageAmplify || 0)));
       if (player.vanishTimer > 0) hitEnemy.fleeTarget = player;
       return false;
     }
     push();
     translate(arrow.x, arrow.y);
-    rotate(Math.atan2(dy, dx));
-    stroke(GREEN);
-    line(0, 0, -10, 0);
+    rotate(Math.atan2(arrow.dy, arrow.dx));
+    stroke(BLACK);
+    fill(BLACK);
+    beginShape();
+    vertex(0, 0);
+    vertex(-10, -3);
+    vertex(-10, 3);
+    endShape(CLOSE);
+    line(0, 0, 10, 0); // Arrow shaft
     pop();
     return arrow.duration > 0 && arrow.x > 0 && arrow.x < WIDTH && arrow.y > 0 && arrow.y < HEIGHT;
   });
@@ -844,8 +875,8 @@ function playGame() {
       let dist = Math.hypot(bolt.dx, bolt.dy);
       if (dist > 0) { bolt.dx /= dist; bolt.dy /= dist; }
     }
-    bolt.x += bolt.dx * (bolt.type === "fireBolt" ? 15 : bolt.type === "chargedBolt" ? 2 : bolt.type === "sentryBolt" ? 5 : bolt.type === "poisonNova" ? 2 : 10);
-    bolt.y += bolt.dy * (bolt.type === "fireBolt" ? 15 : bolt.type === "chargedBolt" ? 2 : bolt.type === "sentryBolt" ? 5 : bolt.type === "poisonNova" ? 2 : 10);
+    bolt.x += bolt.dx * (bolt.type === "fireBolt" ? 5.625 : bolt.type === "chargedBolt" ? 2 : bolt.type === "sentryBolt" ? 5 : bolt.type === "poisonNova" ? 2 : 10);
+    bolt.y += bolt.dy * (bolt.type === "fireBolt" ? 5.625 : bolt.type === "chargedBolt" ? 2 : bolt.type === "sentryBolt" ? 5 : bolt.type === "poisonNova" ? 2 : 10);
     bolt.duration--;
     for (let fw of fireWalls) {
       if (fw.type === "fireWall" && bolt.type === "chargedBolt") {
@@ -860,6 +891,7 @@ function playGame() {
       }
     }
     if (bolt.piercing || bolt.type === "sentryBolt" || bolt.type === "poisonNova") {
+      if (!bolt.hitEnemies) bolt.hitEnemies = [];
       enemies.forEach(enemy => {
         if (enemy.isAlive && Math.hypot(enemy.x - bolt.x, enemy.y - bolt.y) < enemy.radius + 5 && !bolt.hitEnemies.includes(enemy)) {
           if (bolt.type === "poisonNova") {
@@ -867,7 +899,7 @@ function playGame() {
             enemy.poisonDps = bolt.damage;
             enemy.color = GREEN.slice();
           } else {
-            enemy.takeDamage(bolt.damage);
+            enemy.takeDamage(bolt.damage * (1 + (enemy.damageAmplify || 0)));
             if (bolt.type === "boneSpear" && player.vanishTimer > 0) enemy.fleeTarget = player;
           }
           bolt.hitEnemies.push(enemy);
@@ -876,7 +908,7 @@ function playGame() {
     } else {
       let hitEnemy = enemies.find(enemy => enemy.isAlive && Math.hypot(enemy.x - bolt.x, enemy.y - bolt.y) < enemy.radius + 5);
       if (hitEnemy) {
-        hitEnemy.takeDamage(bolt.damage);
+        hitEnemy.takeDamage(bolt.damage * (1 + (hitEnemy.damageAmplify || 0)));
         if (player.vanishTimer > 0) hitEnemy.fleeTarget = player;
         return false;
       }
@@ -884,12 +916,12 @@ function playGame() {
     push();
     translate(bolt.x, bolt.y);
     rotate(Math.atan2(bolt.dy, bolt.dx));
-    stroke(bolt.type === "fireBolt" ? ORANGE : bolt.type === "sentryBolt" ? WHITE : bolt.type === "poisonNova" ? GREEN : WHITE);
+    stroke(bolt.type === "fireBolt" ? [139, 0, 0] : bolt.type === "sentryBolt" ? WHITE : bolt.type === "poisonNova" ? GREEN : bolt.type === "boneSpear" ? BLACK : WHITE);
     strokeWeight(bolt.type === "sentryBolt" ? 2 : 1);
     if (bolt.type === "boneSpear") {
-      line(0, 0, -10, 0);
-      line(-10, 0, -15, -3);
-      line(-10, 0, -15, 3);
+      line(0, 0, -30, 0); // 3x longer
+      line(-30, 0, -45, -3);
+      line(-30, 0, -45, 3);
     } else if (bolt.type === "poisonNova") {
       fill(GREEN);
       beginShape();
@@ -902,6 +934,15 @@ function playGame() {
         let offset = sin(frameCount * 0.1 + i) * 2;
         line(-5 - i * 3, offset, -5 - (i - 1) * 3, -offset);
       }
+    } else if (bolt.type === "chargedBolt") {
+      stroke(WHITE);
+      beginShape();
+      vertex(0, 0);
+      vertex(3, -3);
+      vertex(-3, -6);
+      vertex(3, -9);
+      vertex(-3, -12);
+      endShape();
     } else {
       line(0, 0, bolt.type === "sentryBolt" ? 10 : -10, 0);
     }
@@ -978,54 +1019,48 @@ function playGame() {
     fill(WHITE);
     textSize(20);
     textAlign(CENTER, CENTER);
-    text(spellMessage.text, WIDTH / 2, HEIGHT - 20);
+    text(spellMessage.text, WIDTH / 2, HEIGHT / 8);
     spellMessage.timer--;
-    if (spellMessage.timer <= 0) spellMessage.text = "";
   }
 
-  if (!player.isAlive) {
-    gameOver = true;
-    gameRunning = false;
-  }
+  if (!player.isAlive && !gameOver) gameOver = true;
 }
 
 class Enemy {
   constructor(x, y) {
+    this.name = "Enemy";
     this.x = x;
     this.y = y;
-    this.hp = 60;
-    this.maxHp = 60;
-    this.baseAttackPower = 5;
-    this.moveSpeed = 1.0;
+    this.hp = 50;
+    this.maxHp = 50;
+    this.baseAttackPower = 10;
     this.radius = 15;
-    this.meleeRange = 30; // Increased from 20 to ensure attacks trigger
+    this.moveSpeed = 1.0;
     this.attackCooldown = 0;
     this.attackDelay = 60;
+    this.meleeRange = 30;
     this.isAlive = true;
-    this.name = "Enemy";
     this.color = GRAY.slice();
     this.originalColor = GRAY.slice();
+    this.fleeTarget = null;
     this.damageAmplify = 0;
     this.amplifyTimer = 0;
     this.poisonTimer = 0;
     this.poisonDps = 0;
-    this.chilledTimer = 0;
     this.slowEffect = 0;
-    this.stunTimer = 0;
-    this.fleeTarget = null;
+    this.chilledTimer = 0;
   }
 
-  moveToward(target, entities) {
-    if (this.stunTimer > 0) { this.stunTimer--; return; }
-    let dx = target.x - this.x;
-    let dy = target.y - this.y;
+  wander(entities) {
+    let dx = random(-1, 1);
+    let dy = random(-1, 1);
     let dist = Math.hypot(dx, dy);
-    if (dist > this.meleeRange) {
+    if (dist > 0) {
       let speed = this.moveSpeed * (1 - this.slowEffect);
-      dx /= dist;
-      dy /= dist;
-      let newX = this.x + dx * speed;
-      let newY = this.y + dy * speed;
+      dx = (dx / dist) * speed;
+      dy = (dy / dist) * speed;
+      let newX = this.x + dx;
+      let newY = this.y + dy;
       for (let entity of entities) {
         if (entity.isAlive && entity !== this) {
           let distToEntity = Math.hypot(newX - entity.x, newY - entity.y);
@@ -1042,11 +1077,11 @@ class Enemy {
     }
   }
 
-  wander(entities) {
-    let dx = random(-1, 1);
-    let dy = random(-1, 1);
+  moveToward(target, entities) {
+    let dx = target.x - this.x;
+    let dy = target.y - this.y;
     let dist = Math.hypot(dx, dy);
-    if (dist > 0) {
+    if (dist > this.meleeRange) {
       let speed = this.moveSpeed * (1 - this.slowEffect);
       dx /= dist;
       dy /= dist;
@@ -1429,7 +1464,7 @@ function drawSkillUpgradeScreen() {
   text(`HP Regen: ${player.hpRegen.toFixed(1)}`, attrbox.x + 10, attrbox.y + 225);
   text(`MP Regen: ${player.mpRegen.toFixed(1)}`, attrbox.x + 10, attrbox.y + 245);
   text(`ATK Spd: ${player.attackSpeed.toFixed(2)}`, attrbox.x + 10, attrbox.y + 265);
-  text(`Cast Spd: ${player.castSpeed.toFixed(2)}`, attrbox.x + 10, attrbox.y + 285); // Added Cast Speed
+  text(`Cast Spd: ${player.castSpeed.toFixed(2)}`, attrbox.x + 10, attrbox.y + 285);
 
   let hoveredItem = null;
   spellbox.concat(potbox).forEach(btn => {
@@ -1463,7 +1498,7 @@ function drawSkillUpgradeScreen() {
         ]]
       } : player instanceof RichardTheRogue ? {
         "skill1": [`Multi-Guided Arrows (Level ${player.skillLevels["skill1"]})`, `Fires multiple homing arrows`, [
-          `Arrows: ${player.skillLevels["skill1"] === 0 ? "2" : `${2 + (player.skillLevels["skill1"] - 1) * 1}`}${player.skillLevels["skill1"] < 10 ? ` (${2 + player.skillLevels["skill1"] * 1})` : ""}`,
+          `Arrows: ${player.skillLevels["skill1"] === 0 ? "2" : `${2 + (player.skillLevels["skill1"] - 1)}`}${player.skillLevels["skill1"] < 10 ? ` (${2 + player.skillLevels["skill1"]})` : ""}`,
           `Dmg/Arrow: ${player.skillLevels["skill1"] === 0 ? "23" : `${23 + (player.skillLevels["skill1"] - 1) * 7}`}${player.skillLevels["skill1"] < 10 ? ` (${23 + player.skillLevels["skill1"] * 7})` : ""}`,
           `Mana: ${player.skillLevels["skill1"] === 0 ? "20" : `${20 + player.skillLevels["skill1"] * 2}`}${player.skillLevels["skill1"] < 10 ? ` (${20 + (player.skillLevels["skill1"] + 1) * 2})` : ""}`
         ]],
@@ -1519,7 +1554,7 @@ function drawSkillUpgradeScreen() {
         "skill3": [`Blizzard (Level ${player.skillLevels["skill3"]})`, `Summons a chilling storm at cursor`, [
           `Dmg/s: ${player.skillLevels["skill3"] === 0 ? "30" : `${30 + (player.skillLevels["skill3"] - 1) * 5}`}${player.skillLevels["skill3"] < 10 ? ` (${30 + player.skillLevels["skill3"] * 5})` : ""}`,
           `Slow: ${player.skillLevels["skill3"] === 0 ? "50%" : `${Math.round((0.50 + (player.skillLevels["skill3"] - 1) * 0.03) * 100)}%`}${player.skillLevels["skill3"] < 10 ? ` (${Math.round((0.50 + player.skillLevels["skill3"] * 0.03) * 100)}%)` : ""}`,
-          `Size: 150 Max Blizzards: 2 Duration: 4s`,
+          `Size: 150 Duration: 4s Max Active: 2`,
           `Mana: ${player.skillLevels["skill3"] === 0 ? "30" : `${30 + (player.skillLevels["skill3"] - 1) * 5}`}${player.skillLevels["skill3"] < 10 ? ` (${30 + player.skillLevels["skill3"] * 5})` : ""}`
         ]],
         "skill4": [`Fire Wall (Level ${player.skillLevels["skill4"]})`, `Creates a burning barrier`, [
@@ -1700,47 +1735,41 @@ function keyPressed() {
   if (keyCode === ESCAPE) {
     if (gameRunning && !gameOver && !quitDialog) paused = !paused;
     else if (quitDialog) quitDialog = false;
-  } else if (gameRunning && !paused && !gameOver && spellCooldown === 0) {
-    let isWhirlwind = player.spellAnimation && player.spellAnimation.type === "whirlwind";
-    if (!isWhirlwind) {
-      let targets = enemies.filter(e => e.isAlive).concat(player.skeletons || []);
-      if (key === '3' && player.skillLevels["skill1"] > 0) {
-        let damage = player.skill1(targets, [mouseX, mouseY]);
-        if (damage || damage === true) spellCooldown = Math.round(60 / player.castSpeed);
-      }
-      if (key === '4' && player.skillLevels["skill2"] > 0) {
-        let damage = player.skill2(targets, [mouseX, mouseY]);
-        if (damage) spellCooldown = Math.round(60 / player.castSpeed);
-      }
-      if (key === 'e' && player.skillLevels["skill3"] > 0) {
-        let damage = player.skill3(targets, [mouseX, mouseY]);
-        if (damage) spellCooldown = Math.round(60 / player.castSpeed);
-      }
-      if (key === 'r' && player.skillLevels["skill4"] > 0) {
-        let damage = player.skill4(targets, [mouseX, mouseY]);
-        if (damage || damage === true) spellCooldown = Math.round(60 / player.castSpeed);
-      }
-      if (key === '1') player.usePotion("hp");
-      if (key === '2') player.usePotion("mp");
+  } else if (gameRunning && !paused && !gameOver) {
+    let targets = enemies.filter(e => e.isAlive).concat(player.skeletons || []);
+    if (key === '3' && player.skillLevels["skill1"] > 0) {
+      player.spellHeld.skill1 = true;
+      player.castSpell("skill1", targets, [mouseX, mouseY]);
     }
+    if (key === '4' && player.skillLevels["skill2"] > 0) {
+      player.spellHeld.skill2 = true;
+      player.castSpell("skill2", targets, [mouseX, mouseY]);
+    }
+    if (key === 'e' && player.skillLevels["skill3"] > 0) {
+      player.spellHeld.skill3 = true;
+      player.castSpell("skill3", targets, [mouseX, mouseY]);
+    }
+    if (key === 'r' && player.skillLevels["skill4"] > 0) {
+      player.spellHeld.skill4 = true;
+      player.castSpell("skill4", targets, [mouseX, mouseY]);
+    }
+    if (key === '1') player.usePotion("hp");
+    if (key === '2') player.usePotion("mp");
   }
 }
 
-// Spell hold timers for key state tracking
-let spellKeys = { '3': "skill1", '4': "skill2", 'e': "skill3", 'r': "skill4" };
-let spellPressed = { skill1: false, skill2: false, skill3: false, skill4: false };
-
-// Update spell hold logic (only to reset pressed state)
-function updateSpellHold() {
-  for (let key in spellKeys) {
-    if (!keyIsDown(key.charCodeAt(0)) && key !== 'e') spellPressed[spellKeys[key]] = false;
-    if (!keyIsDown(69) && key === 'e') spellPressed[spellKeys[key]] = false;
+// Key released event handler
+function keyReleased() {
+  if (gameRunning && !paused && !gameOver) {
+    if (key === '3') player.spellHeld.skill1 = false;
+    if (key === '4') player.spellHeld.skill2 = false;
+    if (key === 'e') player.spellHeld.skill3 = false;
+    if (key === 'r') player.spellHeld.skill4 = false;
   }
 }
 
 // Main draw function
 function draw() {
-  updateSpellHold();
   if (selectingClass) {
     background(BLACK);
     fill(WHITE);
@@ -1771,6 +1800,11 @@ function draw() {
     text("Exit", WIDTH / 2, HEIGHT - 70);
   } else if (gameRunning && !paused && !quitDialog && !gameOver) {
     playGame();
+    let targets = enemies.filter(e => e.isAlive).concat(player.skeletons || []);
+    if (player.spellHeld.skill1) player.castSpell("skill1", targets, [mouseX, mouseY]);
+    if (player.spellHeld.skill2) player.castSpell("skill2", targets, [mouseX, mouseY]);
+    if (player.spellHeld.skill3) player.castSpell("skill3", targets, [mouseX, mouseY]);
+    if (player.spellHeld.skill4) player.castSpell("skill4", targets, [mouseX, mouseY]);
   } else if (paused && !quitDialog) {
     drawSkillUpgradeScreen();
   } else if (quitDialog) {
@@ -1842,18 +1876,5 @@ function draw() {
       }
       player.spellAnimation = null;
     }
-  } else if (player?.spellAnimation?.type === "guidedArrows") {
-    let anim = player.spellAnimation;
-    anim.duration--;
-    if (anim.duration === 59) {
-      let aliveTargets = anim.targets.filter(t => t.isAlive);
-      for (let i = 0; i < anim.count; i++) {
-        let target = aliveTargets.length > 0 ? random(aliveTargets) : { dx: random(-1, 1), dy: random(-1, 1), randomMove: true };
-        let dist = Math.hypot(target.dx || 0, target.dy || 0);
-        if (dist > 0 && !('isAlive' in target)) { target.dx /= dist; target.dy /= dist; }
-        arrows.push({ x: anim.x, y: anim.y, target: 'isAlive' in target ? target : { dx: target.dx, dy: target.dy, randomMove: true }, damage: anim.damage, duration: 300 });
-      }
-    }
-    if (anim.duration <= 0) player.spellAnimation = null;
   }
 }
